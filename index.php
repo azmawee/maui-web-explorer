@@ -241,6 +241,22 @@ if (isset($_GET['zip'])) {
     };
     $zip_collect($target_dir, strlen($target_dir));
 
+    // Mode "check": pulangkan JSON ringan sahaja (jalan atas tree, tak baca fail).
+    // Dipanggil oleh JS butang sebelum download bermula -> popup kalau melebihi had.
+    $zip_mode = is_string($_GET['zip']) ? $_GET['zip'] : '1';
+    if ($zip_mode === 'check') {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        header('X-Content-Type-Options: nosniff');
+        echo json_encode([
+            'ok'    => ($zip_total <= $ZIP_MAX && count($zip_files) <= 65534),
+            'total' => $zip_total,
+            'count' => count($zip_files),
+            'max'   => $ZIP_MAX,
+        ]);
+        exit;
+    }
+
     if ($zip_total > $ZIP_MAX || count($zip_files) > 65534) {
         http_response_code(413);
         header('Content-Type: text/html; charset=utf-8');
@@ -504,6 +520,13 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 .lb-body iframe{width:100%;height:100%;border:0;background:#fff;border-radius:6px}
 .lb-body .lb-pre{width:100%;max-height:100%;overflow:auto;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:6px;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word;text-align:left}
+.zw-box{margin:auto;max-width:480px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:28px 26px;text-align:center;box-shadow:var(--shadow)}
+.zw-icon{font-size:48px;line-height:1;margin-bottom:10px}
+.zw-box h2{font-size:18px;margin:0 0 12px}
+.zw-msg{color:var(--text);line-height:1.6;margin:8px 0;font-size:14px}
+.zw-hint{color:var(--text2);line-height:1.6;margin:8px 0;font-size:13px}
+.zw-ok{margin-top:14px;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 22px;font-size:14px;font-weight:600;cursor:pointer}
+.zw-ok:hover{filter:brightness(1.1)}
 @media(max-width:600px){
   .grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
   .card{padding:12px 8px}.card .icon{font-size:28px}.card .fname{font-size:11px}
@@ -546,7 +569,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
   </form>
   <span class="spacer"></span>
   <?php if ($total_items > 0): ?>
-  <a class="view-btn" href="<?= $self . qstr(['zip' => '1']) ?>" title="Download Semua (Zip)" aria-label="Download Semua (Zip)">📦</a>
+  <a class="view-btn zip-btn" href="<?= $self . qstr(['zip' => '1']) ?>" data-check="<?= $self . qstr(['zip' => 'check']) ?>" title="Download Semua (Zip)" aria-label="Download Semua (Zip)">📦</a>
   <?php endif; ?>
   <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Paparan grid">⊞</button>
   <button class="view-btn" id="btn-list" onclick="setView('list')" title="Paparan senarai">☰</button>
@@ -656,6 +679,16 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
     <button id="lb-close" class="lb-btn" type="button" aria-label="Tutup">✕</button>
   </div>
   <div id="lb-body" class="lb-body"></div>
+</div>
+
+<div id="zip-warn" class="lb hidden" role="alertdialog" aria-modal="true" aria-label="Amaran saiz folder">
+  <div class="zw-box">
+    <div class="zw-icon">📦</div>
+    <h2>Folder terlalu besar untuk dimuat turun sebagai Zip</h2>
+    <p id="zw-msg" class="zw-msg"></p>
+    <p class="zw-hint">Sila muat turun fail satu persatu guna butang simpan (⬇) pada setiap item.</p>
+    <button type="button" id="zw-close" class="zw-ok">Baiklah</button>
+  </div>
 </div>
 
 <script>
@@ -855,6 +888,39 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
   onScroll();
+})();
+
+// --- Download Semua (Zip): semak saiz dulu, popup kalau melebihi had ---
+(function(){
+  var zb = document.querySelector('.zip-btn');
+  if (!zb) return;
+  var modal  = document.getElementById('zip-warn');
+  var closeB = document.getElementById('zw-close');
+  var msgEl  = document.getElementById('zw-msg');
+  function gb(b){ return (b / 1073741824).toFixed(2) + ' GB'; }
+  function open(msg){ if (msgEl) msgEl.textContent = msg; if (modal){ modal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; } }
+  function close(){ if (modal){ modal.classList.add('hidden'); document.body.style.overflow = ''; } }
+  zb.addEventListener('click', function(e){
+    e.preventDefault();
+    var dl    = zb.getAttribute('href');
+    var check = zb.getAttribute('data-check');
+    fetch(check, { headers: { 'Accept': 'application/json' } })
+      .then(function(r){ return r.ok ? r.json() : { ok: false }; })
+      .then(function(d){
+        if (d && d.ok === true) {
+          window.location.href = dl;  // saiz OK -> stream download
+        } else {
+          var total = (d && typeof d.total === 'number') ? gb(d.total) : '?';
+          var max   = (d && typeof d.max === 'number') ? gb(d.max) : '10 GB';
+          var cnt   = (d && typeof d.count === 'number') ? d.count.toLocaleString() : '0';
+          open('Jumlah saiz folder ini ialah ' + total + ' (' + cnt + ' fail). Had "Download Semua (Zip)" ialah ' + max + '.');
+        }
+      })
+      .catch(function(){ window.location.href = dl; });  // fallback: terus download
+  });
+  if (closeB) closeB.addEventListener('click', close);
+  if (modal) modal.addEventListener('click', function(e){ if (e.target === modal) close(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
 })();
 </script>
 </body>

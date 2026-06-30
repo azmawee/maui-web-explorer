@@ -1,0 +1,21 @@
+# Example .htaccess for password-protecting Maui Web Explorer on Apache.
+#
+# 1) Create the password file OUTSIDE your web root if possible:
+#        htpasswd -c /etc/apache2/.htpasswd youruser
+#    (on shared hosting, put it above public_html and use its absolute path)
+#
+# 2) Copy this file to ".htaccess" in the same folder as index.php and edit
+#    the AuthUserFile path below to match where you created the password file.
+#
+# 3) Make sure Apache allows overrides: "AllowOverride AuthConfig" (or All)
+#    for this directory in the server / virtualhost config.
+#
+# Tip: serve over HTTPS. Basic Auth over plain HTTP sends credentials in cleartext.
+
+AuthType Basic
+AuthName "Maui Web Explorer - restricted"
+AuthUserFile /etc/apache2/.htpasswd
+Require valid-user
+
+# Directory index: serve index.php by default
+DirectoryIndex index.php

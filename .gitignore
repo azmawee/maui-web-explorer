@@ -1,0 +1,27 @@
+# === Secrets & server-level protection (never commit the real ones) ===
+# These are deployment-specific. Use htaccess.example as a template instead.
+.htaccess
+.htpasswd
+.env
+.env.*
+
+# === OS junk ===
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# === Editors / IDEs ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Logs & temp ===
+*.log
+*.tmp
+
+# === Dependency directories (not used by this project, but just in case) ===
+vendor/
+node_modules/

@@ -1,0 +1,649 @@
+<?php
+error_reporting(0);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+set_time_limit(0);
+ini_set('memory_limit', '64M');
+
+/**
+ * Maui Web Explorer - single-file PHP file explorer.
+ * Dark/light theme, symlink friendly, large-file streaming with resume,
+ * server-side search + pagination, inline media preview, click-to-sort.
+ *
+ * Security model: the requested path is normalized lexically and any '..'
+ * segment that would escape $BASE_DIR is rejected (on both '/' and '\', which
+ * closes the Windows backslash hole). Symlinks inside the tree are resolved by
+ * the OS to their real target (even when that target is outside $BASE_DIR),
+ * BY DESIGN, so only place symlinks you intend to expose. For public use,
+ * protect the entry with .htaccess + .htpasswd and serve over HTTPS (Basic Auth
+ * over plain HTTP sends credentials in cleartext).
+ */
+
+// === Config ===
+$SITE_NAME = 'Maui Web Explorer';
+$BASE_DIR  = __DIR__;
+$HIDDEN    = ['.htaccess', '.htpasswd', '.git', '.gitignore', '.env', 'index.php'];
+$PER_PAGE  = 200; // entries per page (0 = pagination disabled)
+
+$ICONS = [
+    'dir' => '📁', 'dir_up' => '⬆️',
+    'pdf' => '📕', 'doc' => '📘', 'docx' => '📘',
+    'txt' => '📝', 'md' => '📝', 'rtf' => '📝',
+    'jpg' => '🖼️', 'jpeg' => '🖼️', 'png' => '🖼️',
+    'gif' => '🖼️', 'webp' => '🖼️', 'svg' => '🖼️', 'bmp' => '🖼️', 'ico' => '🖼️',
+    'mp4' => '🎬', 'mkv' => '🎬', 'mov' => '🎬',
+    'avi' => '🎬', 'webm' => '🎬', 'm4v' => '🎬',
+    'mp3' => '🎵', 'wav' => '🎵', 'flac' => '🎵',
+    'ogg' => '🎵', 'm4a' => '🎵', 'aac' => '🎵',
+    'zip' => '📦', 'rar' => '📦', '7z' => '📦',
+    'tar' => '📦', 'gz' => '📦', 'bz2' => '📦',
+    'xls' => '📊', 'xlsx' => '📊', 'csv' => '📊',
+    'php' => '🐘', 'js' => '📜', 'html' => '🌐',
+    'css' => '🎨', 'py' => '🐍', 'sh' => '⚡',
+    'json' => '📋', 'xml' => '📋', 'sql' => '🗄️',
+    'exe' => '⚙️', 'apk' => '📱', 'dmg' => '💿',
+    'iso' => '💿', 'default' => '📄',
+];
+
+// Extensions opened in the inline preview lightbox (everything else downloads).
+$PREVIEW = [
+    'img'   => ['jpg','jpeg','png','gif','webp','svg','bmp','ico'],
+    'video' => ['mp4','mkv','mov','webm','m4v','avi'],
+    'audio' => ['mp3','wav','flac','ogg','m4a','aac'],
+    'pdf'   => ['pdf'],
+    'text'  => ['txt','md','json','xml','html','htm','css','js','php','py','sh','csv','srt','ass','sub','ini','yml','yaml','log','rtf','sql'],
+];
+
+// --- Helpers ---
+
+/**
+ * Normalize a relative request path; reject '..' traversal that escapes $base.
+ * Does NOT call realpath(), so symlinks are preserved and followed by the OS.
+ * Returns the absolute path, or null on a traversal attempt.
+ */
+function resolve_safe(string $rel, string $base): ?string {
+    $rel = trim(str_replace('\\', '/', $rel), '/'); // close the Windows backslash hole
+    $parts = [];
+    foreach (explode('/', $rel) as $seg) {
+        if ($seg === '' || $seg === '.') continue;
+        if ($seg === '..') return null;              // block escape from base
+        $parts[] = $seg;
+    }
+    return $parts ? ($base . '/' . implode('/', $parts)) : $base;
+}
+
+/** Build a query string preserving current context (p, q, page) with overrides/drops. */
+function qstr(array $overrides = [], array $drop = []): string {
+    $out = [];
+    foreach (['p', 'q', 'page'] as $k) {
+        if (in_array($k, $drop, true) || array_key_exists($k, $overrides)) continue;
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $out[$k] = $_GET[$k];
+    }
+    foreach ($overrides as $k => $v) {
+        if ($v !== null && $v !== '') $out[$k] = $v;
+    }
+    return $out ? '?' . http_build_query($out, '', '&', PHP_QUERY_RFC3986) : '';
+}
+
+/** filesize() with a safe 0 fallback. */
+function filesize_s(string $path): int {
+    $s = @filesize($path);
+    return $s === false ? 0 : (int)$s;
+}
+
+/** Map an extension to a preview kind ('' | img | video | audio | pdf | text). */
+function preview_kind(string $ext, array $preview): string {
+    $ext = strtolower($ext);
+    foreach ($preview as $kind => $exts) {
+        if (in_array($ext, $exts, true)) return $kind;
+    }
+    return '';
+}
+
+// === Download / stream file (support resume + large file) ===
+if (isset($_GET['d'])) {
+    $file_path = resolve_safe((string)$_GET['d'], $BASE_DIR);
+    if ($file_path === null || !is_file($file_path) || !is_readable($file_path)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $name = basename($file_path);
+    $size = filesize_s($file_path);
+    $mime = get_mime($file_path);
+
+    header("Content-Type: $mime");
+    header("Accept-Ranges: bytes");
+    header("Cache-Control: public, max-age=3600");
+    header("X-Content-Type-Options: nosniff");
+
+    if (preg_match('/^(image|video|audio|text|application\/pdf)/i', $mime)) {
+        header("Content-Disposition: inline; filename=\"$name\"");
+    } else {
+        header("Content-Disposition: attachment; filename=\"$name\"");
+    }
+
+    $start = 0;
+    $end   = $size > 0 ? $size - 1 : 0;
+
+    if (isset($_SERVER['HTTP_RANGE'])
+        && preg_match('/^bytes=(\d+)-(\d*)$/', trim($_SERVER['HTTP_RANGE']), $m)) {
+        $start = (int)$m[1];
+        $end   = ($m[2] !== '') ? (int)$m[2] : $end;
+        if ($size > 0 && $start <= $end && $start < $size && $end < $size) {
+            http_response_code(206);
+            header("Content-Range: bytes $start-$end/$size");
+        } else {
+            http_response_code(416); // Range Not Satisfiable
+            header("Content-Range: bytes */$size");
+            exit;
+        }
+    }
+    header('Content-Length: ' . ($end - $start + 1));
+
+    $fp = @fopen($file_path, 'rb');
+    if (!$fp) { http_response_code(500); exit; }
+
+    $chunk = 8192;
+    $sent  = 0;
+    $total = $end - $start + 1;
+
+    if ($start > 0) fseek($fp, $start);
+
+    while (!feof($fp) && $sent < $total && connection_status() === CONNECTION_NORMAL) {
+        $read = min($chunk, $total - $sent);
+        echo fread($fp, $read);
+        $sent += $read;
+        ob_flush();
+        flush();
+    }
+    fclose($fp);
+    exit;
+}
+
+function get_mime(string $path): string {
+    if (function_exists('finfo_open')) {
+        $f = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($f) {
+            $m = @finfo_file($f, $path);
+            @finfo_close($f);
+            if ($m) return $m;
+        }
+    }
+    if (function_exists('mime_content_type')) {
+        $m = @mime_content_type($path);
+        if ($m && $m !== 'application/octet-stream') return $m;
+    }
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    $map = [
+        'pdf'=>'application/pdf','zip'=>'application/zip','rar'=>'application/vnd.rar',
+        '7z'=>'application/x-7z-compressed','gz'=>'application/gzip',
+        'jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png',
+        'gif'=>'image/gif','webp'=>'image/webp','svg'=>'image/svg+xml',
+        'bmp'=>'image/bmp','ico'=>'image/x-icon',
+        'mp4'=>'video/mp4','mkv'=>'video/x-matroska','mov'=>'video/quicktime',
+        'avi'=>'video/x-msvideo','webm'=>'video/webm','m4v'=>'video/mp4',
+        'mp3'=>'audio/mpeg','wav'=>'audio/wav','flac'=>'audio/flac',
+        'ogg'=>'audio/ogg','m4a'=>'audio/mp4','aac'=>'audio/aac',
+        'txt'=>'text/plain','md'=>'text/plain','csv'=>'text/csv',
+        'html'=>'text/html','htm'=>'text/html','css'=>'text/css',
+        'js'=>'application/javascript','json'=>'application/json','xml'=>'application/xml',
+        'php'=>'application/x-httpd-php','sh'=>'text/x-shellscript',
+        'doc'=>'application/msword',
+        'docx'=>'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls'=>'application/vnd.ms-excel',
+        'xlsx'=>'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'srt'=>'text/plain','ass'=>'text/plain','sub'=>'text/plain',
+    ];
+    return $map[$ext] ?? 'application/octet-stream';
+}
+
+// === Browse directory ===
+$req        = isset($_GET['p']) ? (string)$_GET['p'] : '';
+$target_dir = resolve_safe($req, $BASE_DIR);
+if ($target_dir === null || !is_dir($target_dir) || !is_readable($target_dir)) {
+    http_response_code(404);
+    die('Directory not found.');
+}
+
+// Normalized forward-slash path relative to base (drives breadcrumbs + child links).
+$rel_path = ltrim(substr($target_dir, strlen($BASE_DIR)), '/\\');
+
+$folders = [];
+$files   = [];
+$entries = @scandir($target_dir);
+
+if ($entries === false) {
+    http_response_code(404);
+    die('Cannot read directory.');
+}
+
+foreach ($entries as $name) {
+    if ($name[0] === '.' || in_array($name, $HIDDEN, true)) continue;
+
+    $full = $target_dir . '/' . $name;
+    if (!is_readable($full)) continue;
+
+    $child = ($rel_path !== '' ? $rel_path . '/' : '') . $name;
+
+    if (is_dir($full)) {
+        $folders[] = [
+            'name' => $name, 'path' => $child, 'type' => 'dir',
+            'ext' => '', 'size' => 0, 'mtime' => @filemtime($full) ?: 0,
+        ];
+    } else {
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        $files[] = [
+            'name' => $name, 'path' => $child, 'type' => 'file',
+            'ext' => $ext, 'size' => filesize_s($full), 'mtime' => @filemtime($full) ?: 0,
+        ];
+    }
+}
+
+usort($folders, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+usort($files,   fn($a, $b) => strcasecmp($a['name'], $b['name']));
+$items = array_merge($folders, $files);
+
+$total_folders = count($folders);
+$total_files   = count($files);
+
+// --- Search (server-side, scoped to this directory) ---
+$q = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+if ($q !== '') {
+    $items = array_values(array_filter($items, fn($i) => stripos($i['name'], $q) !== false));
+}
+
+// --- Pagination (server-side) ---
+$total_items = count($items);
+$pages = ($PER_PAGE > 0) ? max(1, (int)ceil($total_items / $PER_PAGE)) : 1;
+$page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$page  = min(max($page, 1), $pages);
+if ($PER_PAGE > 0 && $pages > 1) {
+    $items = array_slice($items, ($page - 1) * $PER_PAGE, $PER_PAGE);
+}
+
+function icon(array $item): string {
+    global $ICONS;
+    if ($item['type'] === 'dir') return $ICONS['dir'];
+    return $ICONS[$item['ext'] ?? ''] ?? $ICONS['default'];
+}
+
+function fmt_size(int $b): string {
+    if ($b >= 1073741824) return number_format($b / 1073741824, 1) . ' GB';
+    if ($b >= 1048576)    return number_format($b / 1048576, 1) . ' MB';
+    if ($b >= 1024)       return number_format($b / 1024, 1) . ' KB';
+    return $b . ' B';
+}
+
+$crumbs = [['label' => '🏠', 'path' => '']];
+if ($rel_path !== '') {
+    $cum = '';
+    foreach (explode('/', $rel_path) as $seg) {
+        $cum .= ($cum !== '' ? '/' : '') . $seg;
+        $crumbs[] = ['label' => $seg, 'path' => $cum];
+    }
+}
+
+$self         = htmlspecialchars(basename($_SERVER['SCRIPT_NAME'] ?? 'index.php'));
+$has_parent   = ($rel_path !== '');
+$parent_parts = explode('/', $rel_path);
+array_pop($parent_parts);
+$parent_path  = implode('/', $parent_parts);
+
+if ($q !== '') {
+    $info = $total_items . ' hasil carian';
+} else {
+    $info = $total_folders . ' folder' . ($total_folders !== 1 ? 's' : '') . ', '
+          . $total_files . ' fail' . ($total_files !== 1 ? 's' : '');
+}
+if ($pages > 1) {
+    $info .= ' · halaman ' . $page . '/' . $pages;
+}
+?>
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Explorer - <?= htmlspecialchars($SITE_NAME) ?></title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f172a;--surface:#1e293b;--header:#020617;--th-bg:#0d1525;
+  --text:#e2e8f0;--text2:#94a3b8;--accent:#3b82f6;--border:#334155;
+  --hover:#334155;--radius:10px;--shadow:0 1px 3px rgba(0,0,0,.3)
+}
+html.light{
+  --bg:#eef2f7;--surface:#ffffff;--header:#1e293b;--th-bg:#e9eef5;
+  --text:#0f172a;--text2:#64748b;--accent:#2563eb;--border:#e2e8f0;
+  --hover:#f1f5f9;--shadow:0 1px 3px rgba(0,0,0,.08)
+}
+html,body{background:var(--bg);color:var(--text)}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+.header{background:var(--header);color:#fff;padding:0}
+.header-inner{max-width:1200px;margin:auto;padding:16px 20px}
+.site{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.breadcrumb{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;font-size:13px;align-items:center}
+.breadcrumb a{color:#94a3b8;text-decoration:none;padding:2px 6px;border-radius:4px;transition:.15s}
+.breadcrumb a:hover{color:#fff;background:rgba(255,255,255,.1)}
+.breadcrumb .sep{color:#475569;font-size:11px}
+.breadcrumb .current{color:#e2e8f0;padding:2px 6px}
+.toolbar{max-width:1200px;margin:auto;padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--text2)}
+.search{display:flex;align-items:center;gap:6px;flex:1 1 200px;max-width:380px}
+.search input{flex:1;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px}
+.search input:focus{outline:none;border-color:var(--accent)}
+.search-clear{color:var(--text2);text-decoration:none;font-size:14px;padding:4px 6px;border-radius:4px}
+.search-clear:hover{color:var(--accent)}
+.toolbar .spacer{flex:1 1 auto}
+.toolbar .info{white-space:nowrap}
+.view-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:14px;transition:.15s;line-height:1}
+.view-btn:hover,.view-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.grid-wrap{max-width:1200px;margin:auto;padding:0 20px 20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;padding-top:4px}
+.card{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:16px 12px;text-align:center;
+  transition:.2s;cursor:pointer;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:8px}
+.card:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
+.card .icon{font-size:36px;line-height:1}
+.card .fname{font-size:12px;word-break:break-all;line-height:1.3;max-height:2.6em;overflow:hidden;color:var(--text)}
+.card .meta{font-size:11px;color:var(--text2)}
+.card.up{border-color:#fbbf24;background:rgba(251,191,36,.1)}
+.card.dir{border-left:3px solid var(--accent)}
+.list-wrap{max-width:1200px;margin:auto;padding:0 20px 20px}
+table.list{width:100%;border-collapse:collapse;background:var(--surface);color:var(--text);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.list th{text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2);
+  background:var(--th-bg);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.3px;user-select:none;white-space:nowrap}
+.list th[data-sort]{cursor:pointer}
+.list th[data-sort]:hover{color:var(--accent)}
+.list th.sort-asc::after{content:" \25B4";color:var(--accent)}
+.list th.sort-desc::after{content:" \25BE";color:var(--accent)}
+.list td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
+.list tr:last-child td{border-bottom:0}
+.list tr:hover td{background:var(--hover)}
+.list tr.dir td{font-weight:600;background:rgba(59,130,246,.08)}
+.list tr.dir:hover td{background:var(--hover)}
+.list .icon{font-size:20px}
+.list .name{word-break:break-all;white-space:normal;max-width:300px}
+.list a{color:inherit;text-decoration:none}
+.list a:hover{color:var(--accent)}
+.list .sz,.list .dt{color:var(--text2);font-size:12px}
+.pager{max-width:1200px;margin:auto;padding:0 20px 30px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.pager .pg{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:13px;text-decoration:none;cursor:pointer}
+.pager .pg:hover{border-color:var(--accent);color:var(--accent)}
+.pager .pg.cur{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pager .pg.ell{cursor:default;border-color:transparent;background:transparent}
+.empty{text-align:center;padding:60px 20px;color:var(--text2);font-size:15px}
+.empty .icon{font-size:48px;display:block;margin-bottom:12px;color:#475569}
+.footer{max-width:1200px;margin:auto;padding:16px 20px;text-align:center;font-size:12px;color:var(--text2);border-top:1px solid var(--border)}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column}
+.lb-bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:#020617;color:#fff}
+.lb-title{flex:1;font-size:14px;word-break:break-all}
+.lb-btn{color:#fff;text-decoration:none;background:rgba(255,255,255,.1);border:1px solid #334155;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+.lb-btn:hover{background:var(--accent);border-color:var(--accent)}
+.lb-body{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:20px}
+.lb-body img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+.lb-body video{max-width:100%;max-height:90vh}
+.lb-body iframe{width:100%;height:100%;border:0;background:#fff;border-radius:6px}
+.lb-body .lb-pre{width:100%;max-height:100%;overflow:auto;background:#0f172a;color:#e2e8f0;padding:16px;border-radius:6px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word;text-align:left}
+@media(max-width:600px){
+  .grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
+  .card{padding:12px 8px}.card .icon{font-size:28px}.card .fname{font-size:11px}
+  .list .name{max-width:120px}
+  .header-inner,.toolbar,.grid-wrap,.list-wrap,.pager,.footer{padding-left:12px;padding-right:12px}
+  .search{max-width:none;flex:1 1 100%}
+}
+.hidden{display:none!important}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:5px}
+::-webkit-scrollbar-thumb:hover{background:#475569}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <div class="site"><?= htmlspecialchars($SITE_NAME) ?></div>
+    <nav class="breadcrumb">
+      <?php foreach ($crumbs as $i => $c): ?>
+        <?php if ($i > 0): ?><span class="sep">›</span><?php endif; ?>
+        <?php if ($i < count($crumbs) - 1): ?>
+          <a href="<?= $self . qstr(['p' => $c['path']], ['q', 'page']) ?>"><?= htmlspecialchars($c['label']) ?></a>
+        <?php else: ?>
+          <span class="current"><?= htmlspecialchars($c['label']) ?></span>
+        <?php endif; ?>
+      <?php endforeach; ?>
+    </nav>
+  </div>
+</header>
+
+<div class="toolbar">
+  <form class="search" method="get" action="<?= $self ?>">
+    <input type="hidden" name="p" value="<?= htmlspecialchars($rel_path) ?>">
+    <input type="text" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Cari dalam folder ini…" autocomplete="off">
+    <?php if ($q !== ''): ?>
+      <a class="search-clear" href="<?= $self . qstr([], ['q', 'page']) ?>" title="Kosongkan carian">✕</a>
+    <?php endif; ?>
+  </form>
+  <span class="spacer"></span>
+  <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Paparan grid">⊞</button>
+  <button class="view-btn" id="btn-list" onclick="setView('list')" title="Paparan senarai">☰</button>
+  <button class="view-btn" id="btn-theme" title="Tukar tema">◐</button>
+  <span class="info"><?= htmlspecialchars($info) ?></span>
+</div>
+
+<?php if (empty($items)): ?>
+<div class="empty">
+  <span class="icon"><?= $q !== '' ? '🔍' : '📂' ?></span>
+  <?= $q !== '' ? 'Tiada fail sepadan dengan carian.' : ($has_parent ? 'Folder ini kosong.' : 'Folder kosong - tiada fail untuk dipaparkan.') ?>
+</div>
+<?php endif; ?>
+
+<div class="grid-wrap" id="view-grid">
+  <div class="grid">
+    <?php if ($has_parent): ?>
+    <a class="card up" href="<?= $self . qstr(['p' => $parent_path], ['q', 'page']) ?>">
+      <span class="icon"><?= $ICONS['dir_up'] ?></span>
+      <span class="fname">..</span>
+      <span class="meta">Atas</span>
+    </a>
+    <?php endif; ?>
+    <?php foreach ($items as $idx => $item):
+      $is_dir = $item['type'] === 'dir';
+      $href   = $is_dir ? $self . qstr(['p' => $item['path']], ['q', 'page'])
+                        : $self . '?d=' . rawurlencode($item['path']);
+      $kind   = $is_dir ? '' : preview_kind($item['ext'], $PREVIEW);
+    ?>
+    <a class="card<?= $is_dir ? ' dir' : '' ?>" href="<?= $href ?>"
+       data-idx="<?= $idx ?>" data-name="<?= htmlspecialchars($item['name']) ?>"
+       data-size="<?= (int)$item['size'] ?>" data-mtime="<?= (int)$item['mtime'] ?>"
+       data-type="<?= $is_dir ? 'dir' : 'file' ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?>>
+      <span class="icon"><?= icon($item) ?></span>
+      <span class="fname"><?= htmlspecialchars($item['name']) ?></span>
+      <span class="meta"><?= $is_dir ? 'Folder' : fmt_size($item['size']) ?></span>
+    </a>
+    <?php endforeach; ?>
+  </div>
+</div>
+
+<div class="list-wrap hidden" id="view-list">
+  <table class="list">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th data-sort="name">Name</th>
+        <th data-sort="size" style="width:100px">Size</th>
+        <th data-sort="mtime" style="width:160px">Modified</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php if ($has_parent): ?>
+      <tr class="dir">
+        <td class="icon"><?= $ICONS['dir_up'] ?></td>
+        <td class="name"><a href="<?= $self . qstr(['p' => $parent_path], ['q', 'page']) ?>">..</a></td>
+        <td class="sz">-</td><td class="dt">-</td>
+      </tr>
+      <?php endif; ?>
+      <?php foreach ($items as $idx => $item):
+        $is_dir = $item['type'] === 'dir';
+        $href   = $is_dir ? $self . qstr(['p' => $item['path']], ['q', 'page'])
+                          : $self . '?d=' . rawurlencode($item['path']);
+        $kind   = $is_dir ? '' : preview_kind($item['ext'], $PREVIEW);
+      ?>
+      <tr class="<?= $is_dir ? 'dir' : '' ?>" data-idx="<?= $idx ?>"
+          data-name="<?= htmlspecialchars($item['name']) ?>" data-size="<?= (int)$item['size'] ?>"
+          data-mtime="<?= (int)$item['mtime'] ?>" data-type="<?= $is_dir ? 'dir' : 'file' ?>">
+        <td class="icon"><?= icon($item) ?></td>
+        <td class="name"><a href="<?= $href ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?> data-name="<?= htmlspecialchars($item['name']) ?>"><?= htmlspecialchars($item['name']) ?></a></td>
+        <td class="sz"><?= $is_dir ? '-' : fmt_size($item['size']) ?></td>
+        <td class="dt"><?= date('d M Y, H:i', (int)$item['mtime']) ?></td>
+      </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+</div>
+
+<?php if ($pages > 1): ?>
+<div class="pager">
+  <?php if ($page > 1): ?><a class="pg" href="<?= $self . qstr(['page' => $page - 1]) ?>">‹ Sebelum</a><?php endif; ?>
+  <?php for ($i = 1; $i <= $pages; $i++):
+        $show = ($i === 1 || $i === $pages || abs($i - $page) <= 1);
+        if ($i === $page): ?>
+    <span class="pg cur"><?= $i ?></span>
+  <?php elseif ($show): ?>
+    <a class="pg" href="<?= $self . qstr(['page' => $i]) ?>"><?= $i ?></a>
+  <?php elseif ($i === $page - 2 || $i === $page + 2): ?>
+    <span class="pg ell">…</span>
+  <?php endif;
+      endfor; ?>
+  <?php if ($page < $pages): ?><a class="pg" href="<?= $self . qstr(['page' => $page + 1]) ?>">Seterus ›</a><?php endif; ?>
+</div>
+<?php endif; ?>
+
+<div class="footer"><?= htmlspecialchars($SITE_NAME) ?></div>
+
+<div id="lightbox" class="lb hidden" role="dialog" aria-modal="true" aria-label="Pratonton fail">
+  <div class="lb-bar">
+    <span id="lb-title" class="lb-title"></span>
+    <a id="lb-dl" class="lb-btn" href="#" download="">⬇ Muat turun</a>
+    <button id="lb-close" class="lb-btn" type="button" aria-label="Tutup">✕</button>
+  </div>
+  <div id="lb-body" class="lb-body"></div>
+</div>
+
+<script>
+function setView(v) {
+  document.getElementById('view-grid').classList.toggle('hidden', v !== 'grid');
+  document.getElementById('view-list').classList.toggle('hidden', v !== 'list');
+  document.getElementById('btn-grid').classList.toggle('active', v === 'grid');
+  document.getElementById('btn-list').classList.toggle('active', v === 'list');
+  try { localStorage.setItem('explorer-view', v); } catch(e) {}
+}
+(function() {
+  try {
+    var saved = localStorage.getItem('explorer-view');
+    if (saved === 'list' || saved === 'grid') setView(saved);
+  } catch(e) {}
+})();
+
+// --- Theme (dark/light) ---
+function setTheme(t) {
+  document.documentElement.classList.toggle('light', t === 'light');
+  try { localStorage.setItem('explorer-theme', t); } catch(e) {}
+}
+(function() {
+  var saved;
+  try { saved = localStorage.getItem('explorer-theme'); } catch(e) {}
+  if (saved !== 'light' && saved !== 'dark') {
+    saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  }
+  setTheme(saved);
+})();
+document.getElementById('btn-theme').addEventListener('click', function() {
+  setTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
+});
+
+// --- Click-to-sort (folders always grouped first) ---
+var sortState = { key: null, dir: 'asc' };
+function sortItems(key, dir) {
+  var cards = Array.prototype.slice.call(document.querySelectorAll('#view-grid .card[data-idx]'));
+  var rows  = Array.prototype.slice.call(document.querySelectorAll('#view-list tbody tr[data-idx]'));
+  var grid  = document.querySelector('#view-grid .grid');
+  var tbody = document.querySelector('#view-list tbody');
+  var map = {};
+  cards.forEach(function(c) {
+    var d = c.dataset;
+    map[d.idx] = { card: c, name: d.name || '', size: +d.size || 0, mtime: +d.mtime || 0, type: d.type || 'file' };
+  });
+  rows.forEach(function(r) { if (map[r.dataset.idx]) map[r.dataset.idx].row = r; });
+  var mul = dir === 'desc' ? -1 : 1;
+  Object.keys(map).sort(function(a, b) {
+    var x = map[a], y = map[b];
+    if (x.type !== y.type) return x.type === 'dir' ? -1 : 1;
+    var cmp = 0;
+    if (key === 'size')       cmp = x.size - y.size;
+    else if (key === 'mtime') cmp = x.mtime - y.mtime;
+    else                      cmp = x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' });
+    if (cmp === 0) cmp = x.name.localeCompare(y.name, undefined, { sensitivity: 'base' });
+    return cmp * mul;
+  }).forEach(function(k) {
+    if (grid && map[k].card) grid.appendChild(map[k].card);
+    if (tbody && map[k].row) tbody.appendChild(map[k].row);
+  });
+}
+Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(th) {
+  th.addEventListener('click', function() {
+    var key = th.getAttribute('data-sort');
+    if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+    else { sortState.key = key; sortState.dir = 'asc'; }
+    sortItems(key, sortState.dir);
+    Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(t) {
+      t.classList.remove('sort-asc', 'sort-desc');
+    });
+    th.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+});
+
+// --- Inline preview lightbox ---
+function openLb(href, name, kind) {
+  var body = document.getElementById('lb-body');
+  body.innerHTML = '';
+  if (kind === 'img')        body.innerHTML = '<img src="' + href + '" alt="">';
+  else if (kind === 'video') body.innerHTML = '<video controls autoplay src="' + href + '"></video>';
+  else if (kind === 'audio') body.innerHTML = '<audio controls autoplay src="' + href + '"></audio>';
+  else if (kind === 'pdf')   body.innerHTML = '<iframe src="' + href + '"></iframe>';
+  else if (kind === 'text') {
+    body.innerHTML = '<pre class="lb-pre">Memuat…</pre>';
+    fetch(href).then(function(r) { return r.text(); }).then(function(t) {
+      var max = 1048576; // cap ~1MB
+      body.querySelector('.lb-pre').textContent = t.length > max ? t.slice(0, max) + '\n\n…(dipangkas)' : t;
+    }).catch(function() {
+      body.querySelector('.lb-pre').textContent = 'Gagal memuatkan fail untuk pratonton.';
+    });
+  }
+  document.getElementById('lb-title').textContent = name;
+  var dl = document.getElementById('lb-dl');
+  dl.setAttribute('href', href);
+  dl.setAttribute('download', name);
+  document.getElementById('lightbox').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeLb() {
+  document.getElementById('lightbox').classList.add('hidden');
+  document.getElementById('lb-body').innerHTML = '';
+  document.body.style.overflow = '';
+}
+document.getElementById('lb-close').addEventListener('click', closeLb);
+document.getElementById('lightbox').addEventListener('click', function(e) { if (e.target === this) closeLb(); });
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeLb(); });
+Array.prototype.slice.call(document.querySelectorAll('[data-preview]')).forEach(function(el) {
+  el.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    openLb(el.getAttribute('href'), el.getAttribute('data-name') || el.textContent.trim(), el.getAttribute('data-preview'));
+  });
+});
+</script>
+</body>
+</html>

@@ -67,6 +67,7 @@ There are many file browsers. Most want a database, a package manager, a contain
 - Inline lightbox preview for images, video, audio, PDF, and text/code
 - Correct Content-Type per extension, with safe Content-Disposition (inline for media, attachment for everything else)
 - `X-Content-Type-Options: nosniff` on every download
+- Per-item **Save As** button on every file card and row, forcing a download instead of opening inline
 
 **Scale and usability**
 - Server-side search (case-insensitive) across all items, applied before the reveal

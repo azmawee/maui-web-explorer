@@ -117,10 +117,11 @@ if (isset($_GET['d'])) {
     header("Cache-Control: public, max-age=3600");
     header("X-Content-Type-Options: nosniff");
 
-    if (preg_match('/^(image|video|audio|text|application\/pdf)/i', $mime)) {
-        header("Content-Disposition: inline; filename=\"$name\"");
-    } else {
+    $force_save = isset($_GET['save']);
+    if ($force_save || !preg_match('/^(image|video|audio|text|application\/pdf)/i', $mime)) {
         header("Content-Disposition: attachment; filename=\"$name\"");
+    } else {
+        header("Content-Disposition: inline; filename=\"$name\"");
     }
 
     $start = 0;
@@ -333,13 +334,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;m
 .grid-wrap{max-width:1200px;margin:auto;padding:0 20px 20px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;padding-top:4px}
 .card{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:16px 12px;text-align:center;
-  transition:.2s;cursor:pointer;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:8px}
+  transition:.2s;cursor:pointer;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:8px;position:relative}
 .card:hover{border-color:var(--accent);box-shadow:var(--shadow);transform:translateY(-2px)}
 .card .icon{font-size:36px;line-height:1}
 .card .fname{font-size:12px;word-break:break-all;line-height:1.3;max-height:2.6em;overflow:hidden;color:var(--text)}
 .card .meta{font-size:11px;color:var(--text2)}
 .card.up{border-color:#fbbf24;background:rgba(251,191,36,.1)}
 .card.dir{border-left:3px solid var(--accent)}
+.dl-btn{position:absolute;right:5px;bottom:5px;width:24px;height:24px;line-height:22px;text-align:center;font-size:13px;border-radius:5px;background:rgba(2,6,23,.6);color:#fff;border:1px solid rgba(255,255,255,.18);cursor:pointer;opacity:.62;transition:.15s;user-select:none}
+.card:hover .dl-btn,.dl-btn:focus{opacity:1}
+.dl-btn:hover{background:var(--accent);border-color:var(--accent);opacity:1}
+.dl-list{position:static;display:inline-block;float:right;margin-left:8px;font-size:15px;line-height:1;color:var(--text2);opacity:.6;cursor:pointer}
+.dl-list:hover{color:var(--accent);opacity:1}
 .list-wrap{max-width:1200px;margin:auto;padding:0 20px 20px}
 table.list{width:100%;border-collapse:collapse;background:var(--surface);color:var(--text);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
 .list th{text-align:left;padding:10px 14px;font-size:12px;font-weight:600;color:var(--text2);
@@ -459,6 +465,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
       <span class="icon"><?= icon($item) ?></span>
       <span class="fname"><?= htmlspecialchars($item['name']) ?></span>
       <span class="meta"><?= $is_dir ? 'Folder' : fmt_size($item['size']) ?></span>
+      <?php if (!$is_dir): ?><span class="dl-btn" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="Simpan fail (Save As)" role="button" tabindex="0">⬇</span><?php endif; ?>
     </a>
     <?php endforeach; ?>
   </div>
@@ -492,7 +499,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
           data-name="<?= htmlspecialchars($item['name']) ?>" data-size="<?= (int)$item['size'] ?>"
           data-mtime="<?= (int)$item['mtime'] ?>" data-type="<?= $is_dir ? 'dir' : 'file' ?>">
         <td class="icon"><?= icon($item) ?></td>
-        <td class="name"><a href="<?= $href ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?> data-name="<?= htmlspecialchars($item['name']) ?>"><?= htmlspecialchars($item['name']) ?></a></td>
+        <td class="name"><a href="<?= $href ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?> data-name="<?= htmlspecialchars($item['name']) ?>"><?= htmlspecialchars($item['name']) ?></a><?php if (!$is_dir): ?><span class="dl-btn dl-list" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="Simpan fail (Save As)" role="button" tabindex="0">⬇</span><?php endif; ?></td>
         <td class="sz"><?= $is_dir ? '-' : fmt_size($item['size']) ?></td>
         <td class="dt"><?= date('d M Y, H:i', (int)$item['mtime']) ?></td>
       </tr>
@@ -643,6 +650,24 @@ Array.prototype.slice.call(document.querySelectorAll('[data-preview]')).forEach(
     e.preventDefault();
     e.stopPropagation();
     openLb(el.getAttribute('href'), el.getAttribute('data-name') || el.textContent.trim(), el.getAttribute('data-preview'));
+  });
+});
+
+// --- Per-item Save As (download button on each file) ---
+Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(function(el) {
+  function saveAs(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var a = document.createElement('a');
+    a.href = el.getAttribute('data-href');
+    a.download = el.getAttribute('data-name') || '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  el.addEventListener('click', saveAs);
+  el.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); saveAs(e); }
   });
 });
 

@@ -362,12 +362,14 @@ foreach ($entries as $name) {
         $folders[] = [
             'name' => $name, 'path' => $child, 'type' => 'dir',
             'ext' => '', 'size' => 0, 'mtime' => @filemtime($full) ?: 0,
+            'ctime' => @filectime($full) ?: 0,
         ];
     } else {
         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
         $files[] = [
             'name' => $name, 'path' => $child, 'type' => 'file',
             'ext' => $ext, 'size' => filesize_s($full), 'mtime' => @filemtime($full) ?: 0,
+            'ctime' => @filectime($full) ?: 0,
         ];
     }
 }
@@ -504,6 +506,14 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 .more-menu{position:absolute;bottom:calc(100% + 4px);right:0;min-width:128px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);overflow:hidden;z-index:50}
 .more-menu button{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:0;padding:8px 12px;font-size:13px;cursor:pointer}
 .more-menu button:hover{background:var(--hover);color:var(--accent)}
+.sort-wrap{position:relative;display:inline-flex}
+.sort-wrap .sort-btn{border-radius:6px 0 0 6px;border-right:0;font-size:13px;white-space:nowrap}
+.sort-wrap .sort-caret{border-radius:0 6px 6px 0;padding:6px 8px;font-size:11px;line-height:1}
+.sort-wrap:hover .sort-btn,.sort-wrap:hover .sort-caret{border-color:var(--accent);color:var(--accent)}
+.sort-menu{position:absolute;top:calc(100% + 4px);right:0;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);overflow:hidden;z-index:60}
+.sort-menu button{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:0;padding:8px 12px;font-size:13px;cursor:pointer}
+.sort-menu button:hover{background:var(--hover);color:var(--accent)}
+.sort-menu button.active{color:var(--accent);font-weight:600}
 .top-fab{position:fixed;right:20px;bottom:20px;z-index:200;width:46px;height:46px;border-radius:50%;background:var(--accent);color:#fff;border:0;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:0;visibility:hidden;transform:translateY(10px);transition:opacity .2s,transform .2s,visibility .2s}
 .top-fab.show{opacity:1;visibility:visible;transform:translateY(0)}
 .top-fab:hover{filter:brightness(1.1)}
@@ -571,6 +581,17 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
   <span class="spacer"></span>
   <?php if ($total_items > 0): ?>
   <a class="view-btn zip-btn" href="<?= $self . qstr(['zip' => '1']) ?>" data-check="<?= $self . qstr(['zip' => 'check']) ?>" title="Download Semua (Zip)" aria-label="Download Semua (Zip)">📦</a>
+  <span class="sort-wrap">
+    <button class="view-btn sort-btn" id="sort-btn" type="button" title="Tokok arah susunan" aria-label="Tokok arah susunan">Nama ▴</button>
+    <button class="view-btn sort-caret" id="sort-caret" type="button" title="Pilih jenis susunan" aria-label="Pilih jenis susunan">▾</button>
+    <div class="sort-menu hidden" id="sort-menu" role="menu" aria-label="Pilih jenis susunan">
+      <button type="button" role="menuitem" data-key="name" data-label="Nama">Nama</button>
+      <button type="button" role="menuitem" data-key="size" data-label="Saiz">Saiz</button>
+      <button type="button" role="menuitem" data-key="ctime" data-label="Dicipta">Dicipta</button>
+      <button type="button" role="menuitem" data-key="mtime" data-label="Diubah">Diubah</button>
+      <button type="button" role="menuitem" data-key="ext" data-label="Jenis">Jenis</button>
+    </div>
+  </span>
   <?php endif; ?>
   <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Paparan grid">⊞</button>
   <button class="view-btn" id="btn-list" onclick="setView('list')" title="Paparan senarai">☰</button>
@@ -603,6 +624,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
     <a class="card<?= $is_dir ? ' dir' : '' ?>" href="<?= $href ?>"
        data-idx="<?= $idx ?>" data-name="<?= htmlspecialchars($item['name']) ?>"
        data-size="<?= (int)$item['size'] ?>" data-mtime="<?= (int)$item['mtime'] ?>"
+       data-ctime="<?= (int)$item['ctime'] ?>" data-ext="<?= htmlspecialchars($item['ext']) ?>"
        data-type="<?= $is_dir ? 'dir' : 'file' ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?>>
       <span class="icon"><?= icon($item) ?></span>
       <span class="fname"><?= htmlspecialchars($item['name']) ?></span>
@@ -639,7 +661,8 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
       ?>
       <tr class="<?= $is_dir ? 'dir' : '' ?>" data-idx="<?= $idx ?>"
           data-name="<?= htmlspecialchars($item['name']) ?>" data-size="<?= (int)$item['size'] ?>"
-          data-mtime="<?= (int)$item['mtime'] ?>" data-type="<?= $is_dir ? 'dir' : 'file' ?>">
+          data-mtime="<?= (int)$item['mtime'] ?>" data-ctime="<?= (int)$item['ctime'] ?>"
+          data-ext="<?= htmlspecialchars($item['ext']) ?>" data-type="<?= $is_dir ? 'dir' : 'file' ?>">
         <td class="icon"><?= icon($item) ?></td>
         <td class="name"><a href="<?= $href ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?> data-name="<?= htmlspecialchars($item['name']) ?>"><?= htmlspecialchars($item['name']) ?></a><?php if (!$is_dir): ?><span class="dl-btn dl-list" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="Simpan fail (Save As)" role="button" tabindex="0">⬇</span><?php endif; ?></td>
         <td class="sz"><?= $is_dir ? '-' : fmt_size($item['size']) ?></td>
@@ -724,8 +747,9 @@ document.getElementById('btn-theme').addEventListener('click', function() {
   setTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
 });
 
-// --- Click-to-sort (folders always grouped first) ---
-var sortState = { key: null, dir: 'asc' };
+// --- Susunan (sort): butang split + dropdown; folder sentiasa dulukan ---
+var SORT_LABELS = { name: 'Nama', size: 'Saiz', ctime: 'Dicipta', mtime: 'Diubah', ext: 'Jenis' };
+var sortState = { key: 'name', dir: 'asc' };
 function sortItems(key, dir) {
   var cards = Array.prototype.slice.call(document.querySelectorAll('#view-grid .card[data-idx]'));
   var rows  = Array.prototype.slice.call(document.querySelectorAll('#view-list tbody tr[data-idx]'));
@@ -734,17 +758,19 @@ function sortItems(key, dir) {
   var map = {};
   cards.forEach(function(c) {
     var d = c.dataset;
-    map[d.idx] = { card: c, name: d.name || '', size: +d.size || 0, mtime: +d.mtime || 0, type: d.type || 'file' };
+    map[d.idx] = { card: c, name: d.name || '', size: +d.size || 0, mtime: +d.mtime || 0, ctime: +d.ctime || 0, ext: d.ext || '', type: d.type || 'file' };
   });
   rows.forEach(function(r) { if (map[r.dataset.idx]) map[r.dataset.idx].row = r; });
   var mul = dir === 'desc' ? -1 : 1;
   Object.keys(map).sort(function(a, b) {
     var x = map[a], y = map[b];
-    if (x.type !== y.type) return x.type === 'dir' ? -1 : 1;
+    if (x.type !== y.type) return x.type === 'dir' ? -1 : 1;   // folder sentiasa dulukan
     var cmp = 0;
-    if (key === 'size')       cmp = x.size - y.size;
-    else if (key === 'mtime') cmp = x.mtime - y.mtime;
-    else                      cmp = x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' });
+    if (key === 'size')         cmp = x.size - y.size;
+    else if (key === 'mtime')   cmp = x.mtime - y.mtime;
+    else if (key === 'ctime')   cmp = x.ctime - y.ctime;
+    else if (key === 'ext')     cmp = (x.ext || '').localeCompare(y.ext || '', undefined, { sensitivity: 'base' });
+    else                        cmp = x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' });
     if (cmp === 0) cmp = x.name.localeCompare(y.name, undefined, { sensitivity: 'base' });
     return cmp * mul;
   }).forEach(function(k) {
@@ -753,18 +779,73 @@ function sortItems(key, dir) {
   });
   if (window.MWE_reveal) window.MWE_reveal();
 }
+function applySortUI() {
+  var arrow = sortState.dir === 'asc' ? ' ▴' : ' ▾';
+  var btn = document.getElementById('sort-btn');
+  if (btn) btn.textContent = (SORT_LABELS[sortState.key] || 'Nama') + arrow;
+  Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(t) {
+    t.classList.remove('sort-asc', 'sort-desc');
+    if (t.getAttribute('data-sort') === sortState.key) t.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+  Array.prototype.slice.call(document.querySelectorAll('#sort-menu button[data-key]')).forEach(function(b) {
+    var active = b.getAttribute('data-key') === sortState.key;
+    b.classList.toggle('active', active);
+    b.textContent = b.getAttribute('data-label') + (active ? arrow : '');
+  });
+}
+function doSort(key, dir) {
+  sortState.key = key; sortState.dir = dir;
+  sortItems(key, dir);
+  applySortUI();
+  try { localStorage.setItem('explorer-sort', key + '|' + dir); } catch(e) {}
+}
+// Header senarai (klik untuk susun) - berkongsi sortState dengan butang sort
 Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(th) {
   th.addEventListener('click', function() {
     var key = th.getAttribute('data-sort');
-    if (sortState.key === key) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
-    else { sortState.key = key; sortState.dir = 'asc'; }
-    sortItems(key, sortState.dir);
-    Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(t) {
-      t.classList.remove('sort-asc', 'sort-desc');
-    });
-    th.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+    var dir = (sortState.key === key) ? (sortState.dir === 'asc' ? 'desc' : 'asc') : 'asc';
+    doSort(key, dir);
   });
 });
+// Butang sort: badan = tokok arah; caret = buka menu jenis susunan
+(function() {
+  var wrap = document.querySelector('.sort-wrap');
+  if (!wrap) return;
+  var btn = document.getElementById('sort-btn');
+  var caret = document.getElementById('sort-caret');
+  var menu = document.getElementById('sort-menu');
+  if (btn) btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    doSort(sortState.key, sortState.dir === 'asc' ? 'desc' : 'asc');
+  });
+  if (caret) caret.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (menu) menu.classList.toggle('hidden');
+  });
+  if (menu) Array.prototype.slice.call(menu.querySelectorAll('button[data-key]')).forEach(function(it) {
+    it.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var key = it.getAttribute('data-key');
+      var dir = (key === sortState.key) ? (sortState.dir === 'asc' ? 'desc' : 'asc') : 'asc';
+      menu.classList.add('hidden');
+      doSort(key, dir);
+    });
+  });
+  document.addEventListener('click', function() { if (menu) menu.classList.add('hidden'); });
+})();
+// Init: guna susunan tersimpan (default Nama menaik)
+(function() {
+  try {
+    var saved = localStorage.getItem('explorer-sort');
+    if (saved) {
+      var p = saved.split('|');
+      if (SORT_LABELS[p[0]]) sortState.key = p[0];
+      if (p[1] === 'desc') sortState.dir = 'desc';
+    }
+  } catch(e) {}
+  sortItems(sortState.key, sortState.dir);
+  applySortUI();
+})();
 
 // --- Inline preview lightbox ---
 function openLb(href, name, kind) {

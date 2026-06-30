@@ -1,0 +1,20 @@
+# Fail yang tidak diperlukan oleh Claude untuk kerja kod pada projek ini.
+# (Ignore khusus Claude. Mekanisme carian Claude juga menghormati .gitignore.)
+
+# Git internals
+.git/
+
+# Aset imej / tangkapan layar (binari, bukan kod)
+Screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+
+# Boilerplate lesen
+LICENSE
+
+# Seting tempatan mesin
+.claude/settings.local.json

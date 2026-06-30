@@ -487,6 +487,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 .list td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
 .list tr:last-child td{border-bottom:0}
 .list tr:hover td{background:var(--hover)}
+.list tbody tr{cursor:pointer}
 .list tr.dir td{font-weight:600;background:rgba(59,130,246,.08)}
 .list tr.dir:hover td{background:var(--hover)}
 .list .icon{font-size:20px}
@@ -822,6 +823,24 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); saveAs(e); }
   });
 });
+
+// --- List mode: klik mana-mana baris ikut link utamanya (folder / fail / ".." kembali) ---
+(function(){
+  var tbody = document.querySelector('#view-list tbody');
+  if (!tbody) return;
+  tbody.addEventListener('click', function(e){
+    if (e.target.closest('a, .dl-btn, th')) return;   // biar link & butang buat kerja sendiri
+    var tr = e.target.closest('tr');
+    if (!tr) return;
+    var a = tr.querySelector('td.name a');
+    if (!a) return;
+    var href = a.getAttribute('href');
+    if (!href) return;
+    var prev = a.getAttribute('data-preview');
+    if (prev) openLb(href, a.getAttribute('data-name') || a.textContent.trim(), prev);
+    else window.location.href = href;
+  });
+})();
 
 // --- Load more (progressive reveal) ---
 (function(){

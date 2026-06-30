@@ -46,7 +46,7 @@ There are many file browsers. Most want a database, a package manager, a contain
 - **Symlink friendly.** Symlinks inside your base folder are followed by the operating system to wherever they point, even outside the base directory. Mount other disks or shared folders as symlinks and they just work.
 - **Streams big files with resume.** Large videos and archives are served with HTTP Range support (206 Partial Content), so players can seek and downloads can resume. Files are never loaded fully into memory.
 - **Inline preview.** Images, video, audio, PDF, and text open in a lightbox without leaving the page.
-- **Handles big folders.** Server-side pagination caps the page size, so a folder with thousands of entries stays fast.
+- **Handles big folders.** A progressive "Lagi N" (load more) button reveals items in batches (15 by default), so large folders stay light and fast.
 - **Dark and light themes.** Persisted in the browser, follows the system preference on first load.
 - **Search and sort.** Server-side search across the whole folder, and click-to-sort by name, size, or modified date.
 - **No bloat.** No tracker, no analytics, no phone-home. Your files stay on your server.
@@ -69,8 +69,8 @@ There are many file browsers. Most want a database, a package manager, a contain
 - `X-Content-Type-Options: nosniff` on every download
 
 **Scale and usability**
-- Server-side search (case-insensitive) across all items, applied before pagination
-- Server-side pagination (default 200 entries per page)
+- Server-side search (case-insensitive) across all items, applied before the reveal
+- Progressive "Load more" reveal: 15 items at first, then Lagi 20 / 30 / 40 / 50 / Semua, with a one-click jump-to-top button
 - Click-to-sort columns: name, size, modified date
 - Dark / light theme toggle, saved in `localStorage`
 - Read-failure counter shown in the toolbar ("N fails")
@@ -215,12 +215,12 @@ All settings live in the clearly marked `// === Config ===` block at the top of 
 $SITE_NAME = 'Maui Web Explorer';   // shown in the header and footer
 $BASE_DIR  = __DIR__;               // the folder to browse (defaults to the script's folder)
 $HIDDEN    = ['.htaccess','.htpasswd','.git','.gitignore','.env','index.php'];
-$PER_PAGE  = 200;                   // entries per page (0 = pagination disabled)
+$REVEAL    = 15;                    // item awal; baki diload dengan butang "Lagi N"
 ```
 
 - **`$BASE_DIR`**: point this at any folder on the server to browse it without moving the script.
 - **`$HIDDEN`**: anything you want kept out of the listing.
-- **`$PER_PAGE`**: lower it for very large folders, set `0` to disable pagination.
+- **`$REVEAL`**: how many items show at first, before the "Lagi N" button appears.
 - **`$ICONS`** and **`$PREVIEW`**: customize file-type icons and which extensions open in the lightbox.
 
 ---

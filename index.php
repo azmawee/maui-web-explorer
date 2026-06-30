@@ -23,7 +23,7 @@ ini_set('memory_limit', '64M');
 $SITE_NAME = 'Maui Web Explorer';
 $BASE_DIR  = __DIR__;
 $HIDDEN    = ['.htaccess', '.htpasswd', '.git', '.gitignore', '.env', 'index.php'];
-$PER_PAGE  = 200; // entries per page (0 = pagination disabled)
+$REVEAL    = 15;  // bilangan item awal; baki dimuat dengan butang "Lagi N" (client-side reveal)
 
 $ICONS = [
     'dir' => '📁', 'dir_up' => '⬆️',
@@ -253,14 +253,8 @@ if ($q !== '') {
     $items = array_values(array_filter($items, fn($i) => stripos($i['name'], $q) !== false));
 }
 
-// --- Pagination (server-side) ---
+// --- Reveal batch: semua item dirender; JS dedahkan secara berperingkat (butang "Lagi N") ---
 $total_items = count($items);
-$pages = ($PER_PAGE > 0) ? max(1, (int)ceil($total_items / $PER_PAGE)) : 1;
-$page  = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
-$page  = min(max($page, 1), $pages);
-if ($PER_PAGE > 0 && $pages > 1) {
-    $items = array_slice($items, ($page - 1) * $PER_PAGE, $PER_PAGE);
-}
 
 function icon(array $item): string {
     global $ICONS;
@@ -295,9 +289,6 @@ if ($q !== '') {
 } else {
     $info = $total_folders . ' folder' . ($total_folders !== 1 ? 's' : '') . ', '
           . $total_files . ' fail' . ($total_files !== 1 ? 's' : '');
-}
-if ($pages > 1) {
-    $info .= ' · halaman ' . $page . '/' . $pages;
 }
 ?>
 <!DOCTYPE html>
@@ -367,11 +358,17 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 .list a{color:inherit;text-decoration:none}
 .list a:hover{color:var(--accent)}
 .list .sz,.list .dt{color:var(--text2);font-size:12px}
-.pager{max-width:1200px;margin:auto;padding:0 20px 30px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
-.pager .pg{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;font-size:13px;text-decoration:none;cursor:pointer}
-.pager .pg:hover{border-color:var(--accent);color:var(--accent)}
-.pager .pg.cur{background:var(--accent);color:#fff;border-color:var(--accent)}
-.pager .pg.ell{cursor:default;border-color:transparent;background:transparent}
+.more-bar{max-width:1200px;margin:auto;padding:0 20px 30px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center}
+.more-wrap{position:relative;display:flex}
+.more-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);border-right:0;border-radius:6px 0 0 6px;padding:7px 12px;font-size:13px;cursor:pointer;transition:.15s}
+.more-btn:hover{border-color:var(--accent);color:var(--accent)}
+.more-caret{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:0 6px 6px 0;padding:7px 8px;font-size:11px;line-height:1;cursor:pointer;transition:.15s}
+.more-caret:hover{border-color:var(--accent);color:var(--accent)}
+.more-menu{position:absolute;bottom:calc(100% + 4px);right:0;min-width:128px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);overflow:hidden;z-index:50}
+.more-menu button{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:0;padding:8px 12px;font-size:13px;cursor:pointer}
+.more-menu button:hover{background:var(--hover);color:var(--accent)}
+.top-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;width:34px;height:34px;font-size:16px;line-height:1;cursor:pointer;transition:.15s}
+.top-btn:hover{border-color:var(--accent);color:var(--accent)}
 .empty{text-align:center;padding:60px 20px;color:var(--text2);font-size:15px}
 .empty .icon{font-size:48px;display:block;margin-bottom:12px;color:#475569}
 .footer{max-width:1200px;margin:auto;padding:16px 20px;text-align:center;font-size:12px;color:var(--text2);border-top:1px solid var(--border)}
@@ -390,7 +387,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
   .grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
   .card{padding:12px 8px}.card .icon{font-size:28px}.card .fname{font-size:11px}
   .list .name{max-width:120px}
-  .header-inner,.toolbar,.grid-wrap,.list-wrap,.pager,.footer{padding-left:12px;padding-right:12px}
+  .header-inner,.toolbar,.grid-wrap,.list-wrap,.more-bar,.footer{padding-left:12px;padding-right:12px}
   .search{max-width:none;flex:1 1 100%}
 }
 .hidden{display:none!important}
@@ -504,20 +501,23 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
   </table>
 </div>
 
-<?php if ($pages > 1): ?>
-<div class="pager">
-  <?php if ($page > 1): ?><a class="pg" href="<?= $self . qstr(['page' => $page - 1]) ?>">‹ Sebelum</a><?php endif; ?>
-  <?php for ($i = 1; $i <= $pages; $i++):
-        $show = ($i === 1 || $i === $pages || abs($i - $page) <= 1);
-        if ($i === $page): ?>
-    <span class="pg cur"><?= $i ?></span>
-  <?php elseif ($show): ?>
-    <a class="pg" href="<?= $self . qstr(['page' => $i]) ?>"><?= $i ?></a>
-  <?php elseif ($i === $page - 2 || $i === $page + 2): ?>
-    <span class="pg ell">…</span>
-  <?php endif;
-      endfor; ?>
-  <?php if ($page < $pages): ?><a class="pg" href="<?= $self . qstr(['page' => $page + 1]) ?>">Seterus ›</a><?php endif; ?>
+<script>(function(){var n=<?= (int)$REVEAL ?>;function h(s){for(var i=0;i<s.length;i++){if(i>=n)s[i].classList.add('hidden');}}h(document.querySelectorAll('#view-grid .card[data-idx]'));h(document.querySelectorAll('#view-list tbody tr[data-idx]'));})();</script>
+
+<?php if ($total_items > $REVEAL): ?>
+<div class="more-bar" id="more-bar">
+  <div class="more-wrap">
+    <button class="more-btn" id="more-btn" type="button">Lagi <?= (int)$REVEAL ?></button>
+    <button class="more-caret" id="more-caret" type="button" aria-label="Pilih bilangan">▾</button>
+    <div class="more-menu hidden" id="more-menu">
+      <button type="button" data-step="15">Lagi 15</button>
+      <button type="button" data-step="20">Lagi 20</button>
+      <button type="button" data-step="30">Lagi 30</button>
+      <button type="button" data-step="40">Lagi 40</button>
+      <button type="button" data-step="50">Lagi 50</button>
+      <button type="button" data-step="all">Semua</button>
+    </div>
+  </div>
+  <button class="top-btn" id="top-btn" type="button" title="Ke atas (muka pertama)" aria-label="Ke atas">⇈</button>
 </div>
 <?php endif; ?>
 
@@ -591,6 +591,7 @@ function sortItems(key, dir) {
     if (grid && map[k].card) grid.appendChild(map[k].card);
     if (tbody && map[k].row) tbody.appendChild(map[k].row);
   });
+  if (window.MWE_reveal) window.MWE_reveal();
 }
 Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(th) {
   th.addEventListener('click', function() {
@@ -644,6 +645,57 @@ Array.prototype.slice.call(document.querySelectorAll('[data-preview]')).forEach(
     openLb(el.getAttribute('href'), el.getAttribute('data-name') || el.textContent.trim(), el.getAttribute('data-preview'));
   });
 });
+
+// --- Load more (progressive reveal) ---
+(function(){
+  var STEP = <?= (int)$REVEAL ?>;
+  var step = STEP;
+  var total = document.querySelectorAll('#view-grid .card[data-idx]').length;
+  var shown = Math.min(step, total);
+  var bar = document.getElementById('more-bar');
+  var btn = document.getElementById('more-btn');
+  var caret = document.getElementById('more-caret');
+  var menu = document.getElementById('more-menu');
+  var topBtn = document.getElementById('top-btn');
+
+  function applyReveal(){
+    var gc = document.querySelectorAll('#view-grid .card[data-idx]');
+    var lr = document.querySelectorAll('#view-list tbody tr[data-idx]');
+    for (var i = 0; i < gc.length; i++) gc[i].classList.toggle('hidden', i >= shown);
+    for (var j = 0; j < lr.length; j++) lr[j].classList.toggle('hidden', j >= shown);
+    if (bar) bar.classList.toggle('hidden', shown >= total);
+  }
+  function loadMore(n){
+    if (n === 'all') shown = total;
+    else shown = Math.min(total, shown + n);
+    applyReveal();
+  }
+  if (btn) btn.addEventListener('click', function(){ loadMore(step); });
+  if (caret) caret.addEventListener('click', function(e){
+    e.stopPropagation();
+    if (menu) menu.classList.toggle('hidden');
+  });
+  if (menu) Array.prototype.slice.call(menu.querySelectorAll('button[data-step]')).forEach(function(it){
+    it.addEventListener('click', function(e){
+      e.stopPropagation();
+      var raw = it.getAttribute('data-step');
+      step = (raw === 'all') ? 'all' : parseInt(raw, 10);
+      if (btn) btn.textContent = it.textContent;
+      menu.classList.add('hidden');
+      loadMore(step === 'all' ? 'all' : step);
+    });
+  });
+  document.addEventListener('click', function(){ if (menu) menu.classList.add('hidden'); });
+  if (topBtn) topBtn.addEventListener('click', function(){
+    shown = Math.min(STEP, total);
+    step = STEP;
+    if (btn) btn.textContent = 'Lagi ' + STEP;
+    applyReveal();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  window.MWE_reveal = applyReveal;
+  applyReveal();
+})();
 </script>
 </body>
 </html>

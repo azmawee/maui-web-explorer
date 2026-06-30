@@ -99,6 +99,12 @@ The root directory rendered as a card grid. The toolbar carries the folder searc
 
 Inside a subfolder. The breadcrumb shows the current path, the first card is the parent ("up") shortcut, and the grid lays out the folder contents. The same toolbar (search, view toggle, theme toggle) stays in place.
 
+### Grid view, root folder (light theme)
+
+<img src="Screenshots/001a.png" alt="Maui Web Explorer in the light theme showing the same root folder grid with folders Drama, Drama_Short, Movies and Movies_Santai on a light background, plus the search box, view toggle and theme toggle in the toolbar">
+
+The same root folder with the theme flipped to light. The toolbar's theme toggle switches between dark and light; the choice is saved in the browser (localStorage) and follows the system preference on first load. The card grid, search box, view toggle, and live folder and file counts all carry over unchanged.
+
 ---
 
 ## Requirements

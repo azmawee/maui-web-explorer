@@ -25,7 +25,7 @@ $BASE_DIR  = __DIR__;
 $HIDDEN    = ['.htaccess', '.htpasswd', '.git', '.gitignore', '.env', 'index.php'];
 $REVEAL    = 15;  // bilangan item awal; baki dimuat dengan butang "Lagi N" (client-side reveal)
 $ZIP_MAX   = 10737418240; // had "Download Semua (Zip)" - 10 GB (streaming STORE, compress paling ringan)
-$FOOTER    = 'Web Explorer ringan dan ringkas'; // ayat footer; kosongkan ('') untuk sembunyikan
+$FOOTER    = 'Web Explorer ringan dan ringkas.'; // ayat footer; kosongkan ('') untuk sembunyikan
 
 $ICONS = [
     'dir' => '📁', 'dir_up' => '⬆️',

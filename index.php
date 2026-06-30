@@ -25,6 +25,7 @@ $BASE_DIR  = __DIR__;
 $HIDDEN    = ['.htaccess', '.htpasswd', '.git', '.gitignore', '.env', 'index.php'];
 $REVEAL    = 15;  // bilangan item awal; baki dimuat dengan butang "Lagi N" (client-side reveal)
 $ZIP_MAX   = 10737418240; // had "Download Semua (Zip)" - 10 GB (streaming STORE, compress paling ringan)
+$FOOTER    = 'Web Explorer ringan dan ringkas'; // ayat footer; kosongkan ('') untuk sembunyikan
 
 $ICONS = [
     'dir' => '📁', 'dir_up' => '⬆️',
@@ -694,7 +695,9 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 
 <button class="top-fab" id="top-fab" type="button" title="Ke atas (muka pertama)" aria-label="Ke atas">⇈</button>
 
-<div class="footer"><?= htmlspecialchars($SITE_NAME) ?></div>
+<?php if ($FOOTER !== ''): ?>
+<div class="footer"><?= htmlspecialchars($FOOTER) ?></div>
+<?php endif; ?>
 
 <div id="lightbox" class="lb hidden" role="dialog" aria-modal="true" aria-label="Pratonton fail">
   <div class="lb-bar">

@@ -24,6 +24,7 @@ $SITE_NAME = 'Maui Web Explorer';
 $BASE_DIR  = __DIR__;
 $HIDDEN    = ['.htaccess', '.htpasswd', '.git', '.gitignore', '.env', 'index.php'];
 $REVEAL    = 15;  // bilangan item awal; baki dimuat dengan butang "Lagi N" (client-side reveal)
+$ZIP_MAX   = 10737418240; // had "Download Semua (Zip)" - 10 GB (streaming STORE, compress paling ringan)
 
 $ICONS = [
     'dir' => '📁', 'dir_up' => '⬆️',
@@ -210,6 +211,120 @@ if ($target_dir === null || !is_dir($target_dir) || !is_readable($target_dir)) {
 // Normalized forward-slash path relative to base (drives breadcrumbs + child links).
 $rel_path = ltrim(substr($target_dir, strlen($BASE_DIR)), '/\\');
 
+// === Download whole folder as a streaming ZIP (STORE / lightest compression) ===
+// Saiz disemak SEKARANG (bila user tekan butang), bukan pre-check. Melebihi $ZIP_MAX
+// atau 65534 fail -> halaman amaran (413). Symlink diikuti (ciri sedia ada); kitaran
+// symlink dihindarkan dengan hash realpath pada folder yang telah dilawati.
+if (isset($_GET['zip'])) {
+    $zip_files = [];   // [['abs'=>..., 'rel'=>..., 'size'=>...], ...]
+    $zip_total = 0;    // jumlah saiz fail ( uncompressed, sama dengan STORE)
+    $zip_seen  = [];   // realpath folder => true (penghad kitaran)
+
+    $zip_collect = function (string $dir, int $base_len) use (&$zip_collect, &$zip_files, &$zip_total, &$zip_seen, $HIDDEN) {
+        $real = @realpath($dir);
+        if ($real === false || isset($zip_seen[$real])) return;
+        $zip_seen[$real] = true;
+        $entries = @scandir($dir);
+        if ($entries === false) return;
+        foreach ($entries as $name) {
+            if ($name === '.' || $name === '..') continue;
+            if ($name[0] === '.' || in_array($name, $HIDDEN, true)) continue; // sembunyi dotfile / $HIDDEN
+            $full = $dir . '/' . $name;
+            if (is_dir($full)) { $zip_collect($full, $base_len); continue; }
+            if (is_file($full) && is_readable($full)) {
+                $rel = str_replace('\\', '/', ltrim(substr($full, $base_len), '/\\'));
+                $sz  = filesize_s($full);
+                $zip_files[] = ['abs' => $full, 'rel' => $rel, 'size' => $sz];
+                $zip_total  += $sz;
+            }
+        }
+    };
+    $zip_collect($target_dir, strlen($target_dir));
+
+    if ($zip_total > $ZIP_MAX || count($zip_files) > 65534) {
+        http_response_code(413);
+        header('Content-Type: text/html; charset=utf-8');
+        $gb   = function ($b) { return number_format($b / 1073741824, 2) . ' GB'; };
+        $zself = htmlspecialchars(basename($_SERVER['SCRIPT_NAME'] ?? 'index.php'));
+        $back  = $zself . qstr([], ['zip']);
+        echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+           . '<title>Folder terlalu besar</title><style>'
+           . 'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;'
+           . 'background:#0f172a;color:#e2e8f0;font-family:system-ui,Segoe UI,Roboto,sans-serif}'
+           . '.box{max-width:560px;padding:32px 28px;text-align:center}'
+           . '.big{font-size:60px;margin-bottom:10px}h1{font-size:20px;margin:0 0 14px}'
+           . 'p{color:#94a3b8;line-height:1.6;margin:8px 0}b{color:#e2e8f0}'
+           . '.a{display:inline-block;margin-top:20px;padding:10px 18px;border-radius:8px;'
+           . 'background:#3b82f6;color:#fff;text-decoration:none;font-weight:600}'
+           . '</style><div class="box"><div class="big">📦</div>'
+           . '<h1>Folder terlalu besar untuk dimuat turun sebagai Zip</h1>'
+           . '<p>Jumlah saiz folder ini ialah <b>' . $gb($zip_total) . '</b> '
+           . '(' . number_format(count($zip_files)) . ' fail).</p>'
+           . '<p>Had "Download Semua (Zip)" ialah <b>' . $gb($ZIP_MAX) . '</b>. '
+           . 'Sila muat turun fail satu persatu menggunakan butang simpan pada setiap item.</p>'
+           . '<a class="a" href="' . $back . '">Kembali ke folder</a></div>';
+        exit;
+    }
+
+    // Kosongkan sebarang output buffer, buang had masa (zip besar mengambil masa).
+    while (@ob_get_level()) @ob_end_clean();
+    @set_time_limit(0);
+
+    $zip_name = ((basename($target_dir) !== '') ? basename($target_dir) : 'files') . '.zip';
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zip_name . '"');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+
+    $cd = '';       // central directory terkumpul
+    $offset = 0;    // offset local header setiap fail
+
+    foreach ($zip_files as $f) {
+        $name  = $f['rel'];
+        $nlen  = strlen($name);
+        $mt    = @filemtime($f['abs']) ?: time();
+        $tt    = getdate($mt);
+        $dtime = ($tt['hours'] << 11) | ($tt['minutes'] << 5) | (($tt['seconds'] >> 1) & 0x1F);
+        $ddate = ((max(1980, $tt['year']) - 1980) << 9) | ($tt['mon'] << 5) | $tt['mday'];
+
+        // Local file header: flag 0x0008 -> saiz & CRC ditangguh ke data descriptor.
+        $lfh = pack('VvvvvvVVVvv', 0x04034b50, 20, 0x0008, 0, $dtime, $ddate, 0, 0, 0, $nlen, 0) . $name;
+        echo $lfh;
+
+        // Stream fail + kira CRC32 secara incremental (memori flat, tak load seluruh fail).
+        $ctx    = hash_init('crc32b');
+        $usize  = 0;
+        $fp     = @fopen($f['abs'], 'rb');
+        if ($fp) {
+            while (!feof($fp)) {
+                $chunk = fread($fp, 65536);
+                if ($chunk === false || $chunk === '') break;
+                hash_update($ctx, $chunk);
+                $usize += strlen($chunk);
+                echo $chunk;
+                flush();
+            }
+            fclose($fp);
+        }
+        $crc = hexdec(hash_final($ctx));
+
+        // Data descriptor (dengan tandatangan) -> CRC + saiz sebenar selepas data.
+        echo pack('VVVV', 0x08074b50, $crc, $usize, $usize);
+
+        // Central directory record untuk fail ini.
+        $cd .= pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0x0008, 0, $dtime, $ddate,
+                    $crc, $usize, $usize, $nlen, 0, 0, 0, 0, 0, $offset) . $name;
+
+        $offset += strlen($lfh) + $usize + 16; // 16 = saiz data descriptor (4x V)
+    }
+
+    echo $cd;
+    // End of central directory record.
+    echo pack('VvvvvVVv', 0x06054b50, 0, 0, count($zip_files), count($zip_files), strlen($cd), $offset, 0);
+    flush();
+    exit;
+}
+
 $folders = [];
 $files   = [];
 $entries = @scandir($target_dir);
@@ -288,8 +403,7 @@ $parent_path  = implode('/', $parent_parts);
 if ($q !== '') {
     $info = $total_items . ' hasil carian';
 } else {
-    $info = $total_folders . ' folder' . ($total_folders !== 1 ? 's' : '') . ', '
-          . $total_files . ' fail' . ($total_files !== 1 ? 's' : '');
+    $info = $total_folders . ' folder, ' . $total_files . ' fail';
 }
 ?>
 <!DOCTYPE html>
@@ -329,7 +443,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;m
 .search-clear:hover{color:var(--accent)}
 .toolbar .spacer{flex:1 1 auto}
 .toolbar .info{white-space:nowrap}
-.view-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:14px;transition:.15s;line-height:1}
+.view-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:14px;transition:.15s;line-height:1;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 .view-btn:hover,.view-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .grid-wrap{max-width:1200px;margin:auto;padding:0 20px 20px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;padding-top:4px}
@@ -373,8 +487,9 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 .more-menu{position:absolute;bottom:calc(100% + 4px);right:0;min-width:128px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);overflow:hidden;z-index:50}
 .more-menu button{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:0;padding:8px 12px;font-size:13px;cursor:pointer}
 .more-menu button:hover{background:var(--hover);color:var(--accent)}
-.top-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;width:34px;height:34px;font-size:16px;line-height:1;cursor:pointer;transition:.15s}
-.top-btn:hover{border-color:var(--accent);color:var(--accent)}
+.top-fab{position:fixed;right:20px;bottom:20px;z-index:200;width:46px;height:46px;border-radius:50%;background:var(--accent);color:#fff;border:0;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:0;visibility:hidden;transform:translateY(10px);transition:opacity .2s,transform .2s,visibility .2s}
+.top-fab.show{opacity:1;visibility:visible;transform:translateY(0)}
+.top-fab:hover{filter:brightness(1.1)}
 .empty{text-align:center;padding:60px 20px;color:var(--text2);font-size:15px}
 .empty .icon{font-size:48px;display:block;margin-bottom:12px;color:#475569}
 .footer{max-width:1200px;margin:auto;padding:16px 20px;text-align:center;font-size:12px;color:var(--text2);border-top:1px solid var(--border)}
@@ -430,6 +545,9 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
     <?php endif; ?>
   </form>
   <span class="spacer"></span>
+  <?php if ($total_items > 0): ?>
+  <a class="view-btn" href="<?= $self . qstr(['zip' => '1']) ?>" title="Download Semua (Zip)" aria-label="Download Semua (Zip)">📦</a>
+  <?php endif; ?>
   <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Paparan grid">⊞</button>
   <button class="view-btn" id="btn-list" onclick="setView('list')" title="Paparan senarai">☰</button>
   <button class="view-btn" id="btn-theme" title="Tukar tema">◐</button>
@@ -524,9 +642,10 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
       <button type="button" data-step="all">Semua</button>
     </div>
   </div>
-  <button class="top-btn" id="top-btn" type="button" title="Ke atas (muka pertama)" aria-label="Ke atas">⇈</button>
 </div>
 <?php endif; ?>
+
+<button class="top-fab" id="top-fab" type="button" title="Ke atas (muka pertama)" aria-label="Ke atas">⇈</button>
 
 <div class="footer"><?= htmlspecialchars($SITE_NAME) ?></div>
 
@@ -681,7 +800,6 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
   var btn = document.getElementById('more-btn');
   var caret = document.getElementById('more-caret');
   var menu = document.getElementById('more-menu');
-  var topBtn = document.getElementById('top-btn');
 
   function applyReveal(){
     var gc = document.querySelectorAll('#view-grid .card[data-idx]');
@@ -711,15 +829,32 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
     });
   });
   document.addEventListener('click', function(){ if (menu) menu.classList.add('hidden'); });
-  if (topBtn) topBtn.addEventListener('click', function(){
+  // Reset paparan ke muka pertama (dipanggil oleh butang terapung scroll-to-top).
+  window.MWE_reveal_top = function(){
     shown = Math.min(STEP, total);
     step = STEP;
     if (btn) btn.textContent = 'Lagi ' + STEP;
     applyReveal();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
+  };
   window.MWE_reveal = applyReveal;
   applyReveal();
+})();
+
+// --- Butang terapung scroll-to-top (sentiasa ada bila halaman boleh scroll ke atas) ---
+(function(){
+  var fab = document.getElementById('top-fab');
+  if (!fab) return;
+  function onScroll(){
+    if (window.scrollY > 50) fab.classList.add('show');
+    else fab.classList.remove('show');
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  fab.addEventListener('click', function(){
+    if (window.MWE_reveal_top) window.MWE_reveal_top();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  onScroll();
 })();
 </script>
 </body>

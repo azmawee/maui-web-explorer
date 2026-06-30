@@ -68,13 +68,15 @@ There are many file browsers. Most want a database, a package manager, a contain
 - Correct Content-Type per extension, with safe Content-Disposition (inline for media, attachment for everything else)
 - `X-Content-Type-Options: nosniff` on every download
 - Per-item **Save As** button on every file card and row, forcing a download instead of opening inline
+- **Download Semua (Zip)** button downloads the whole current folder as a single streaming ZIP. Compression is STORE (the lightest method - no deflate pass), files are streamed in chunks so memory stays flat, and the total size is checked at click time: folders larger than 10 GB (or with more than 65,534 files) are refused with a friendly warning page instead of starting the download
 
 **Scale and usability**
 - Server-side search (case-insensitive) across all items, applied before the reveal
-- Progressive "Load more" reveal: 15 items at first, then Lagi 20 / 30 / 40 / 50 / Semua, with a one-click jump-to-top button
+- Progressive "Load more" reveal: 15 items at first, then Lagi 20 / 30 / 40 / 50 / Semua
+- Floating **scroll-to-top** button that appears only when the page can scroll up and jumps back to the first page (and the very top) in one click
 - Click-to-sort columns: name, size, modified date
 - Dark / light theme toggle, saved in `localStorage`
-- Read-failure counter shown in the toolbar ("N fails")
+- Live folder and file count shown in the toolbar
 
 **Security model**
 - Lexical path normalization rejects `..` traversal on both `/` and `\` (closes the Windows backslash hole)
@@ -217,11 +219,13 @@ $SITE_NAME = 'Maui Web Explorer';   // shown in the header and footer
 $BASE_DIR  = __DIR__;               // the folder to browse (defaults to the script's folder)
 $HIDDEN    = ['.htaccess','.htpasswd','.git','.gitignore','.env','index.php'];
 $REVEAL    = 15;                    // item awal; baki diload dengan butang "Lagi N"
+$ZIP_MAX   = 10737418240;           // had "Download Semua (Zip)" - 10 GB (STORE, paling ringan)
 ```
 
 - **`$BASE_DIR`**: point this at any folder on the server to browse it without moving the script.
 - **`$HIDDEN`**: anything you want kept out of the listing.
 - **`$REVEAL`**: how many items show at first, before the "Lagi N" button appears.
+- **`$ZIP_MAX`**: maximum total size (in bytes) for the "Download Semua (Zip)" folder download. Default is 10 GB; folders larger than this (or with more than 65,534 files) are refused with a warning page instead of starting the download.
 - **`$ICONS`** and **`$PREVIEW`**: customize file-type icons and which extensions open in the lightbox.
 
 ---
@@ -295,6 +299,9 @@ Yes. Path normalization handles both `/` and `\`, and the screenshots were taken
 
 **Can it stream very large files (tens of GB)?**
 Yes. Files are read in 8 KB chunks with HTTP Range support, so memory use stays flat and players can seek / resume. Give your web server a generous read timeout for slow clients.
+
+**Can I download a whole folder at once?**
+Yes. The "Download Semua (Zip)" button streams the current folder as a single ZIP using STORE (no compression pass, so it is fast and light on CPU and memory). The total is checked at click time: if the folder is larger than 10 GB (or has more than 65,534 files) you get a warning page instead of a download. For big folders, use the Save As button on individual files.
 
 **Will it show my `.env` or `.htpasswd`?**
 No. Sensitive dotfiles are in `$HIDDEN` by default, and the real `.htaccess` / `.htpasswd` are gitignored.

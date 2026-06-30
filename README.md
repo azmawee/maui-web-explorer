@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Screenshots/001.png" alt="Maui Web Explorer - single-file PHP file explorer in dark grid view" width="100%">
+<img src="Screenshots/001.png?v=2" alt="Maui Web Explorer - single-file PHP file explorer in dark grid view" width="100%">
 
 # Maui Web Explorer
 
@@ -89,13 +89,13 @@ There are many file browsers. Most want a database, a package manager, a contain
 
 ### Grid view, root folder (dark theme)
 
-<img src="Screenshots/001.png" alt="Maui Web Explorer grid view showing folders Drama, Drama_Short, Movies and Movies_Santai with a search box, view toggle and theme toggle in dark mode">
+<img src="Screenshots/001.png?v=2" alt="Maui Web Explorer grid view showing folders Drama, Drama_Short, Movies and Movies_Santai with a search box, view toggle and theme toggle in dark mode">
 
 The root directory rendered as a card grid. The toolbar carries the folder search box, the grid / list view switch, and the dark / light theme toggle. The status line reports the live folder and file counts.
 
 ### Grid view, browsing a subfolder (dark theme)
 
-<img src="Screenshots/002.png" alt="Maui Web Explorer browsing a subfolder called Drama_Short with a breadcrumb, 26 folder cards and an up / parent shortcut card highlighted">
+<img src="Screenshots/002.png?v=2" alt="Maui Web Explorer browsing a subfolder called Drama_Short with a breadcrumb, 26 folder cards and an up / parent shortcut card highlighted">
 
 Inside a subfolder. The breadcrumb shows the current path, the first card is the parent ("up") shortcut, and the grid lays out the folder contents. The same toolbar (search, view toggle, theme toggle) stays in place.
 

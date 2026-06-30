@@ -10,7 +10,7 @@ Browse, stream, and preview the files on your server from any browser.
 **Zero dependencies. Zero database. Zero build step.** Drop in one `index.php` and you are done.
 
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777BB4?logo=php&logoColor=white)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![License: BSD-2-Clause](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-success)
 ![Single File](https://img.shields.io/badge/single%20file-index.php-0078D4)
 ![No Database](https://img.shields.io/badge/database-not%20required-informational)
@@ -333,7 +333,7 @@ If Maui Web Explorer saved you a container or a database, consider giving it a s
 
 ## License
 
-Released under the **MIT License** - see [LICENSE](LICENSE). Free for personal and commercial use.
+Released under the **BSD 2-Clause License** (the FreeBSD license) - see [LICENSE](LICENSE). Free for personal and commercial use.
 
 ---
 

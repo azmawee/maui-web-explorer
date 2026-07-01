@@ -693,7 +693,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 </div>
 <?php endif; ?>
 
-<button class="top-fab" id="top-fab" type="button" title="Ke atas (muka pertama)" aria-label="Ke atas">⇈</button>
+<button class="top-fab" id="top-fab" type="button" title="Ke atas" aria-label="Ke atas">⇈</button>
 
 <?php if ($FOOTER !== ''): ?>
 <div class="footer"><?= htmlspecialchars($FOOTER) ?></div>
@@ -945,9 +945,18 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
     if (bar) bar.classList.toggle('hidden', shown >= total);
   }
   function loadMore(n){
+    // Simpan kedudukan butang "Lagi" sebelum item baru direveal.
+    var before = (bar && !bar.classList.contains('hidden')) ? bar.getBoundingClientRect().top : null;
     if (n === 'all') shown = total;
     else shown = Math.min(total, shown + n);
     applyReveal();
+    // Tatal ikut butang: kekal butang dalam viewport supaya item baru nampak.
+    // Bila semua dah terbuka, terus turun ke bawah sekali.
+    if (shown >= total) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
+    } else if (before !== null && bar) {
+      window.scrollBy({ top: bar.getBoundingClientRect().top - before, behavior: 'smooth' });
+    }
   }
   if (btn) btn.addEventListener('click', function(){ loadMore(step); });
   if (caret) caret.addEventListener('click', function(e){
@@ -965,13 +974,6 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
     });
   });
   document.addEventListener('click', function(){ if (menu) menu.classList.add('hidden'); });
-  // Reset paparan ke muka pertama (dipanggil oleh butang terapung scroll-to-top).
-  window.MWE_reveal_top = function(){
-    shown = Math.min(STEP, total);
-    step = STEP;
-    if (btn) btn.textContent = 'Lagi ' + STEP;
-    applyReveal();
-  };
   window.MWE_reveal = applyReveal;
   applyReveal();
 })();
@@ -987,7 +989,7 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', onScroll);
   fab.addEventListener('click', function(){
-    if (window.MWE_reveal_top) window.MWE_reveal_top();
+    // Hanya tatal ke atas; jangan tutup item yang user dah buka.
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
   onScroll();

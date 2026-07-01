@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="Screenshots/001.png?v=2" alt="Maui Web Explorer - single-file PHP file explorer in dark grid view" width="100%">
+<img src="Screenshots/001.png?v=3" alt="Maui Web Explorer - single-file PHP file explorer in dark grid view" width="100%">
 
 # Maui Web Explorer
 
@@ -48,7 +48,7 @@ There are many file browsers. Most want a database, a package manager, a contain
 - **Inline preview.** Images, video, audio, PDF, and text open in a lightbox without leaving the page.
 - **Handles big folders.** A progressive "Lagi N" (load more) button reveals items in batches (15 by default), so large folders stay light and fast.
 - **Dark and light themes.** Persisted in the browser, follows the system preference on first load.
-- **Search and sort.** Server-side search across the whole folder, and click-to-sort by name, size, or modified date.
+- **Search and sort.** Server-side search across the whole folder, and click-to-sort by name, size, created, modified, or type.
 - **No bloat.** No tracker, no analytics, no phone-home. Your files stay on your server.
 
 ---
@@ -72,9 +72,9 @@ There are many file browsers. Most want a database, a package manager, a contain
 
 **Scale and usability**
 - Server-side search (case-insensitive) across all items, applied before the reveal
-- Progressive "Load more" reveal: 15 items at first, then Lagi 20 / 30 / 40 / 50 / Semua
-- Floating **scroll-to-top** button that appears only when the page can scroll up and jumps back to the first page (and the very top) in one click
-- Click-to-sort columns: name, size, modified date
+- Progressive "Load more" reveal: 15 items at first, then Lagi 15 / 20 / 30 / 40 / 50 / Semua, and the page scrolls to keep the "Lagi" button in view (or jumps to the very bottom for Semua)
+- Floating **scroll-to-top** button that appears only when the page can scroll up and jumps back to the very top in one click, without closing the items you have already revealed
+- Click-to-sort by name, size, created, modified, or type (folders grouped first, choice saved in `localStorage`)
 - Dark / light theme toggle, saved in `localStorage`
 - Live folder and file count shown in the toolbar
 
@@ -89,19 +89,19 @@ There are many file browsers. Most want a database, a package manager, a contain
 
 ### Grid view, root folder (dark theme)
 
-<img src="Screenshots/001.png?v=2" alt="Maui Web Explorer grid view showing folders Drama, Drama_Short, Movies and Movies_Santai with a search box, view toggle and theme toggle in dark mode">
+<img src="Screenshots/001.png?v=3" alt="Maui Web Explorer grid view showing folders Drama, Drama_Short, Movies and Movies_Santai with a search box, view toggle and theme toggle in dark mode">
 
-The root directory rendered as a card grid. The toolbar carries the folder search box, the grid / list view switch, and the dark / light theme toggle. The status line reports the live folder and file counts.
+The root directory rendered as a card grid. The toolbar carries the folder search box, the "Download Semua (Zip)" button, the sort control (name / size / created / modified / type), the grid / list view switch, and the dark / light theme toggle. The status line reports the live folder and file counts.
 
 ### Grid view, browsing a subfolder (dark theme)
 
-<img src="Screenshots/002.png?v=2" alt="Maui Web Explorer browsing a subfolder called Drama_Short with a breadcrumb, 26 folder cards and an up / parent shortcut card highlighted">
+<img src="Screenshots/002.png?v=3" alt="Maui Web Explorer browsing a subfolder called Drama_Short with a breadcrumb, 26 folder cards and an up / parent shortcut card highlighted">
 
-Inside a subfolder. The breadcrumb shows the current path, the first card is the parent ("up") shortcut, and the grid lays out the folder contents. The same toolbar (search, view toggle, theme toggle) stays in place.
+Inside a subfolder. The breadcrumb shows the current path, the first card is the parent ("up") shortcut, and the grid lays out the folder contents. The same toolbar (search, Zip, sort, view toggle, theme toggle) stays in place.
 
 ### Grid view, root folder (light theme)
 
-<img src="Screenshots/001a.png" alt="Maui Web Explorer in the light theme showing the same root folder grid with folders Drama, Drama_Short, Movies and Movies_Santai on a light background, plus the search box, view toggle and theme toggle in the toolbar">
+<img src="Screenshots/001a.png?v=3" alt="Maui Web Explorer in the light theme showing the same root folder grid with folders Drama, Drama_Short, Movies and Movies_Santai on a light background, plus the search box, view toggle and theme toggle in the toolbar">
 
 The same root folder with the theme flipped to light. The toolbar's theme toggle switches between dark and light; the choice is saved in the browser (localStorage) and follows the system preference on first load. The card grid, search box, view toggle, and live folder and file counts all carry over unchanged.
 

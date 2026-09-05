@@ -56,6 +56,28 @@ $PREVIEW = [
     'text'  => ['txt','md','json','xml','html','htm','css','js','php','py','sh','csv','srt','ass','sub','ini','yml','yaml','log','rtf','sql'],
 ];
 
+// === Language (i18n) - satu fail satu bahasa dalam folder lang/ ===
+// Daftar bahasa di sini (kod => nama paparan) + sediakan lang/<kod>.php.
+$LANGS = [
+    'ms' => 'Bahasa Melayu',
+    'en' => 'English',
+    'zh' => '中文',
+    'es' => 'Español',
+    'fr' => 'Français',
+    'ja' => '日本語',
+];
+$LANG = (isset($_COOKIE['mwe_lang']) && isset($LANGS[$_COOKIE['mwe_lang']])
+        && is_file(__DIR__ . '/lang/' . $_COOKIE['mwe_lang'] . '.php'))
+       ? $_COOKIE['mwe_lang'] : 'ms';
+$I18N    = require __DIR__ . '/lang/' . $LANG . '.php';
+$I18N_FB = ($LANG === 'ms') ? $I18N : require __DIR__ . '/lang/ms.php';
+
+/** Terjemah kunci; jatuh ke Bahasa Melayu, kemudian ke kunci itu sendiri. */
+function T(string $k): string {
+    global $I18N, $I18N_FB;
+    return $I18N[$k] ?? ($I18N_FB[$k] ?? $k);
+}
+
 // --- Helpers ---
 
 /**
@@ -105,10 +127,10 @@ function preview_kind(string $ext, array $preview): string {
 // === Download / stream file (support resume + large file) ===
 if (isset($_GET['d'])) {
     $file_path = resolve_safe((string)$_GET['d'], $BASE_DIR);
-    if ($file_path === null || !is_file($file_path) || !is_readable($file_path)) {
-        http_response_code(404);
-        exit;
-    }
+if ($file_path === null || !is_file($file_path) || !is_readable($file_path)) {
+    http_response_code(404);
+    exit;
+}
 
     $name = basename($file_path);
     $size = filesize_s($file_path);
@@ -206,7 +228,7 @@ $req        = isset($_GET['p']) ? (string)$_GET['p'] : '';
 $target_dir = resolve_safe($req, $BASE_DIR);
 if ($target_dir === null || !is_dir($target_dir) || !is_readable($target_dir)) {
     http_response_code(404);
-    die('Directory not found.');
+    die(T('die404'));
 }
 
 // Normalized forward-slash path relative to base (drives breadcrumbs + child links).
@@ -261,11 +283,11 @@ if (isset($_GET['zip'])) {
     if ($zip_total > $ZIP_MAX || count($zip_files) > 65534) {
         http_response_code(413);
         header('Content-Type: text/html; charset=utf-8');
-        $gb   = function ($b) { return number_format($b / 1073741824, 2) . ' GB'; };
+        $gb    = function ($b) { return number_format($b / 1073741824, 2) . ' GB'; };
         $zself = htmlspecialchars(basename($_SERVER['SCRIPT_NAME'] ?? 'index.php'));
         $back  = $zself . qstr([], ['zip']);
         echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-           . '<title>Folder terlalu besar</title><style>'
+           . '<title>' . htmlspecialchars(T('p_title')) . '</title><style>'
            . 'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;'
            . 'background:#0f172a;color:#e2e8f0;font-family:system-ui,Segoe UI,Roboto,sans-serif}'
            . '.box{max-width:560px;padding:32px 28px;text-align:center}'
@@ -274,12 +296,10 @@ if (isset($_GET['zip'])) {
            . '.a{display:inline-block;margin-top:20px;padding:10px 18px;border-radius:8px;'
            . 'background:#3b82f6;color:#fff;text-decoration:none;font-weight:600}'
            . '</style><div class="box"><div class="big">📦</div>'
-           . '<h1>Folder terlalu besar untuk dimuat turun sebagai Zip</h1>'
-           . '<p>Jumlah saiz folder ini ialah <b>' . $gb($zip_total) . '</b> '
-           . '(' . number_format(count($zip_files)) . ' fail).</p>'
-           . '<p>Had "Download Semua (Zip)" ialah <b>' . $gb($ZIP_MAX) . '</b>. '
-           . 'Sila muat turun fail satu persatu menggunakan butang simpan pada setiap item.</p>'
-           . '<a class="a" href="' . $back . '">Kembali ke folder</a></div>';
+           . '<h1>' . htmlspecialchars(T('p_h1')) . '</h1>'
+           . '<p>' . sprintf(htmlspecialchars(T('p_p1')), $gb($zip_total), number_format(count($zip_files))) . '</p>'
+           . '<p>' . sprintf(htmlspecialchars(T('p_p2')), $gb($ZIP_MAX)) . '</p>'
+           . '<a class="a" href="' . $back . '">' . htmlspecialchars(T('p_back')) . '</a></div>';
         exit;
     }
 
@@ -348,7 +368,7 @@ $entries = @scandir($target_dir);
 
 if ($entries === false) {
     http_response_code(404);
-    die('Cannot read directory.');
+    die(T('die404b'));
 }
 
 foreach ($entries as $name) {
@@ -420,9 +440,9 @@ array_pop($parent_parts);
 $parent_path  = implode('/', $parent_parts);
 
 if ($q !== '') {
-    $info = $total_items . ' hasil carian';
+    $info = sprintf(T('info_q'), $total_items);
 } else {
-    $info = $total_folders . ' folder, ' . $total_files . ' fail';
+    $info = sprintf(T('info'), $total_folders, $total_files);
 }
 ?>
 <!DOCTYPE html>
@@ -447,7 +467,11 @@ html.light{
 html,body{background:var(--bg);color:var(--text)}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh}
 .header{background:var(--header);color:#fff;padding:0}
-.header-inner{max-width:1200px;margin:auto;padding:16px 20px}
+.header-inner{max-width:1200px;margin:auto;padding:16px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.header-left{min-width:0}
+.lang-sel{background:rgba(255,255,255,.06);color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 8px;font-size:13px;cursor:pointer;flex-shrink:0}
+.lang-sel:hover{border-color:var(--accent)}
+.lang-sel option{background:#1e293b;color:#e2e8f0}
 .site{font-size:20px;font-weight:700;letter-spacing:-.3px}
 .breadcrumb{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;font-size:13px;align-items:center}
 .breadcrumb a{color:#94a3b8;text-decoration:none;padding:2px 6px;border-radius:4px;transition:.15s}
@@ -561,53 +585,60 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 
 <header class="header">
   <div class="header-inner">
-    <div class="site"><?= htmlspecialchars($SITE_NAME) ?></div>
-    <nav class="breadcrumb">
-      <?php foreach ($crumbs as $i => $c): ?>
-        <?php if ($i > 0): ?><span class="sep">›</span><?php endif; ?>
-        <?php if ($i < count($crumbs) - 1): ?>
-          <a href="<?= $self . qstr(['p' => $c['path']], ['q', 'page']) ?>"><?= htmlspecialchars($c['label']) ?></a>
-        <?php else: ?>
-          <span class="current"><?= htmlspecialchars($c['label']) ?></span>
-        <?php endif; ?>
+    <div class="header-left">
+      <div class="site"><?= htmlspecialchars($SITE_NAME) ?></div>
+      <nav class="breadcrumb">
+        <?php foreach ($crumbs as $i => $c): ?>
+          <?php if ($i > 0): ?><span class="sep">›</span><?php endif; ?>
+          <?php if ($i < count($crumbs) - 1): ?>
+            <a href="<?= $self . qstr(['p' => $c['path']], ['q', 'page']) ?>"><?= htmlspecialchars($c['label']) ?></a>
+          <?php else: ?>
+            <span class="current"><?= htmlspecialchars($c['label']) ?></span>
+          <?php endif; ?>
+        <?php endforeach; ?>
+      </nav>
+    </div>
+    <select class="lang-sel" id="lang-sel" title="<?= htmlspecialchars(T('lang_title')) ?>" aria-label="<?= htmlspecialchars(T('lang_title')) ?>">
+      <?php foreach ($LANGS as $code => $lname): ?>
+        <option value="<?= htmlspecialchars($code) ?>"<?= $code === $LANG ? ' selected' : '' ?>><?= htmlspecialchars($lname) ?></option>
       <?php endforeach; ?>
-    </nav>
+    </select>
   </div>
 </header>
 
 <div class="toolbar">
   <form class="search" method="get" action="<?= $self ?>">
     <input type="hidden" name="p" value="<?= htmlspecialchars($rel_path) ?>">
-    <input type="text" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Cari dalam folder ini…" autocomplete="off">
+    <input type="text" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="<?= htmlspecialchars(T('search_ph')) ?>" autocomplete="off">
     <?php if ($q !== ''): ?>
-      <a class="search-clear" href="<?= $self . qstr([], ['q', 'page']) ?>" title="Kosongkan carian">✕</a>
+      <a class="search-clear" href="<?= $self . qstr([], ['q', 'page']) ?>" title="<?= htmlspecialchars(T('clear_search')) ?>">✕</a>
     <?php endif; ?>
   </form>
   <span class="spacer"></span>
   <?php if ($total_items > 0): ?>
-  <a class="view-btn zip-btn" href="<?= $self . qstr(['zip' => '1']) ?>" data-check="<?= $self . qstr(['zip' => 'check']) ?>" title="Download Semua (Zip)" aria-label="Download Semua (Zip)">📦</a>
+  <a class="view-btn zip-btn" href="<?= $self . qstr(['zip' => '1']) ?>" data-check="<?= $self . qstr(['zip' => 'check']) ?>" title="<?= htmlspecialchars(T('zip_dl')) ?>" aria-label="<?= htmlspecialchars(T('zip_dl')) ?>">📦</a>
   <span class="sort-wrap">
-    <button class="view-btn sort-btn" id="sort-btn" type="button" title="Tokok arah susunan" aria-label="Tokok arah susunan">Nama ▴</button>
-    <button class="view-btn sort-caret" id="sort-caret" type="button" title="Pilih jenis susunan" aria-label="Pilih jenis susunan">▾</button>
-    <div class="sort-menu hidden" id="sort-menu" role="menu" aria-label="Pilih jenis susunan">
-      <button type="button" role="menuitem" data-key="name" data-label="Nama">Nama</button>
-      <button type="button" role="menuitem" data-key="size" data-label="Saiz">Saiz</button>
-      <button type="button" role="menuitem" data-key="ctime" data-label="Dicipta">Dicipta</button>
-      <button type="button" role="menuitem" data-key="mtime" data-label="Diubah">Diubah</button>
-      <button type="button" role="menuitem" data-key="ext" data-label="Jenis">Jenis</button>
+    <button class="view-btn sort-btn" id="sort-btn" type="button" title="<?= htmlspecialchars(T('sort_inc')) ?>" aria-label="<?= htmlspecialchars(T('sort_inc')) ?>"><?= htmlspecialchars(T('s_name')) ?> ▴</button>
+    <button class="view-btn sort-caret" id="sort-caret" type="button" title="<?= htmlspecialchars(T('sort_pick')) ?>" aria-label="<?= htmlspecialchars(T('sort_pick')) ?>">▾</button>
+    <div class="sort-menu hidden" id="sort-menu" role="menu" aria-label="<?= htmlspecialchars(T('sort_pick')) ?>">
+      <button type="button" role="menuitem" data-key="name" data-label="<?= htmlspecialchars(T('s_name')) ?>"><?= htmlspecialchars(T('s_name')) ?></button>
+      <button type="button" role="menuitem" data-key="size" data-label="<?= htmlspecialchars(T('s_size')) ?>"><?= htmlspecialchars(T('s_size')) ?></button>
+      <button type="button" role="menuitem" data-key="ctime" data-label="<?= htmlspecialchars(T('s_ctime')) ?>"><?= htmlspecialchars(T('s_ctime')) ?></button>
+      <button type="button" role="menuitem" data-key="mtime" data-label="<?= htmlspecialchars(T('s_mtime')) ?>"><?= htmlspecialchars(T('s_mtime')) ?></button>
+      <button type="button" role="menuitem" data-key="ext" data-label="<?= htmlspecialchars(T('s_ext')) ?>"><?= htmlspecialchars(T('s_ext')) ?></button>
     </div>
   </span>
   <?php endif; ?>
-  <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Paparan grid">⊞</button>
-  <button class="view-btn" id="btn-list" onclick="setView('list')" title="Paparan senarai">☰</button>
-  <button class="view-btn" id="btn-theme" title="Tukar tema">◐</button>
+  <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="<?= htmlspecialchars(T('v_grid')) ?>">⊞</button>
+  <button class="view-btn" id="btn-list" onclick="setView('list')" title="<?= htmlspecialchars(T('v_list')) ?>">☰</button>
+  <button class="view-btn" id="btn-theme" title="<?= htmlspecialchars(T('v_theme')) ?>">◐</button>
   <span class="info"><?= htmlspecialchars($info) ?></span>
 </div>
 
 <?php if (empty($items)): ?>
 <div class="empty">
   <span class="icon"><?= $q !== '' ? '🔍' : '📂' ?></span>
-  <?= $q !== '' ? 'Tiada fail sepadan dengan carian.' : ($has_parent ? 'Folder ini kosong.' : 'Folder kosong - tiada fail untuk dipaparkan.') ?>
+  <?= htmlspecialchars($q !== '' ? T('e_search') : ($has_parent ? T('e_sub') : T('e_root'))) ?>
 </div>
 <?php endif; ?>
 
@@ -617,7 +648,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
     <a class="card up" href="<?= $self . qstr(['p' => $parent_path], ['q', 'page']) ?>">
       <span class="icon"><?= $ICONS['dir_up'] ?></span>
       <span class="fname">..</span>
-      <span class="meta">Atas</span>
+      <span class="meta"><?= htmlspecialchars(T('up')) ?></span>
     </a>
     <?php endif; ?>
     <?php foreach ($items as $idx => $item):
@@ -633,23 +664,21 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
        data-type="<?= $is_dir ? 'dir' : 'file' ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?>>
       <span class="icon"><?= icon($item) ?></span>
       <span class="fname"><?= htmlspecialchars($item['name']) ?></span>
-      <span class="meta"><?= $is_dir ? 'Folder' : fmt_size($item['size']) ?></span>
-      <?php if (!$is_dir): ?><span class="dl-btn" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="Simpan fail (Save As)" role="button" tabindex="0">⬇</span><?php endif; ?>
+      <span class="meta"><?= $is_dir ? htmlspecialchars(T('dir')) : fmt_size($item['size']) ?></span>
+      <?php if (!$is_dir): ?><span class="dl-btn" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="<?= htmlspecialchars(T('save_as')) ?>" role="button" tabindex="0">⬇</span><?php endif; ?>
     </a>
     <?php endforeach; ?>
     <?php if ($total_items > $REVEAL): ?>
-    <span class="card more-card more-ui" id="grid-more" role="button" tabindex="0" aria-label="Muat lebih item">
+    <span class="card more-card more-ui" id="grid-more" role="button" tabindex="0" aria-label="<?= htmlspecialchars(T('more_aria')) ?>">
       <span class="icon">···</span>
-      <span class="fname more-label">Lagi <?= (int)$REVEAL ?></span>
+      <span class="fname more-label"><?= htmlspecialchars(sprintf(T('more'), (int)$REVEAL)) ?></span>
       <span class="more-dd">
-        <span class="more-caret" title="Pilih bilangan">▼</span>
+        <span class="more-caret" title="<?= htmlspecialchars(T('more_pick')) ?>">▼</span>
         <div class="more-menu hidden">
-          <button type="button" data-step="15">Lagi 15</button>
-          <button type="button" data-step="20">Lagi 20</button>
-          <button type="button" data-step="30">Lagi 30</button>
-          <button type="button" data-step="40">Lagi 40</button>
-          <button type="button" data-step="50">Lagi 50</button>
-          <button type="button" data-step="all">Semua</button>
+          <?php foreach ([15, 20, 30, 40, 50] as $n): ?>
+            <button type="button" data-step="<?= $n ?>"><?= htmlspecialchars(sprintf(T('more'), $n)) ?></button>
+          <?php endforeach; ?>
+          <button type="button" data-step="all"><?= htmlspecialchars(T('all')) ?></button>
         </div>
       </span>
     </span>
@@ -662,9 +691,9 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
     <thead>
       <tr>
         <th style="width:36px"></th>
-        <th data-sort="name">Name</th>
-        <th data-sort="size" style="width:100px">Size</th>
-        <th data-sort="mtime" style="width:160px">Modified</th>
+        <th data-sort="name"><?= htmlspecialchars(T('lh_name')) ?></th>
+        <th data-sort="size" style="width:100px"><?= htmlspecialchars(T('lh_size')) ?></th>
+        <th data-sort="mtime" style="width:160px"><?= htmlspecialchars(T('lh_mod')) ?></th>
       </tr>
     </thead>
     <tbody>
@@ -686,7 +715,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
           data-mtime="<?= (int)$item['mtime'] ?>" data-ctime="<?= (int)$item['ctime'] ?>"
           data-ext="<?= htmlspecialchars($item['ext']) ?>" data-type="<?= $is_dir ? 'dir' : 'file' ?>">
         <td class="icon"><?= icon($item) ?></td>
-        <td class="name"><a href="<?= $href ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?> data-name="<?= htmlspecialchars($item['name']) ?>"><?= htmlspecialchars($item['name']) ?></a><?php if (!$is_dir): ?><span class="dl-btn dl-list" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="Simpan fail (Save As)" role="button" tabindex="0">⬇</span><?php endif; ?></td>
+        <td class="name"><a href="<?= $href ?>"<?= $kind !== '' ? ' data-preview="' . htmlspecialchars($kind) . '"' : '' ?> data-name="<?= htmlspecialchars($item['name']) ?>"><?= htmlspecialchars($item['name']) ?></a><?php if (!$is_dir): ?><span class="dl-btn dl-list" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="<?= htmlspecialchars(T('save_as')) ?>" role="button" tabindex="0">⬇</span><?php endif; ?></td>
         <td class="sz"><?= $is_dir ? '-' : fmt_size($item['size']) ?></td>
         <td class="dt"><?= date('d M Y, H:i', (int)$item['mtime']) ?></td>
       </tr>
@@ -695,15 +724,13 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
       <tr class="more-row more-ui" id="list-more">
         <td colspan="4">
           <span class="more-row-wrap">
-            <button type="button" class="more-btn more-label">Lagi <?= (int)$REVEAL ?></button>
-            <span class="more-caret" title="Pilih bilangan">▾</span>
+            <button type="button" class="more-btn more-label"><?= htmlspecialchars(sprintf(T('more'), (int)$REVEAL)) ?></button>
+            <span class="more-caret" title="<?= htmlspecialchars(T('more_pick')) ?>">▼</span>
             <div class="more-menu hidden">
-              <button type="button" data-step="15">Lagi 15</button>
-              <button type="button" data-step="20">Lagi 20</button>
-              <button type="button" data-step="30">Lagi 30</button>
-              <button type="button" data-step="40">Lagi 40</button>
-              <button type="button" data-step="50">Lagi 50</button>
-              <button type="button" data-step="all">Semua</button>
+              <?php foreach ([15, 20, 30, 40, 50] as $n): ?>
+                <button type="button" data-step="<?= $n ?>"><?= htmlspecialchars(sprintf(T('more'), $n)) ?></button>
+              <?php endforeach; ?>
+              <button type="button" data-step="all"><?= htmlspecialchars(T('all')) ?></button>
             </div>
           </span>
         </td>
@@ -715,32 +742,34 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 
 <script>(function(){var n=<?= (int)$REVEAL ?>;function h(s){for(var i=0;i<s.length;i++){if(i>=n)s[i].classList.add('hidden');}}h(document.querySelectorAll('#view-grid .card[data-idx]'));h(document.querySelectorAll('#view-list tbody tr[data-idx]'));})();</script>
 
-<button class="top-fab" id="top-fab" type="button" title="Ke atas" aria-label="Ke atas">⇈</button>
+<button class="top-fab" id="top-fab" type="button" title="<?= htmlspecialchars(T('top')) ?>" aria-label="<?= htmlspecialchars(T('top')) ?>">⇈</button>
 
 <?php if ($FOOTER !== ''): ?>
 <div class="footer"><?= htmlspecialchars($FOOTER) ?></div>
 <?php endif; ?>
 
-<div id="lightbox" class="lb hidden" role="dialog" aria-modal="true" aria-label="Pratonton fail">
+<div id="lightbox" class="lb hidden" role="dialog" aria-modal="true" aria-label="Preview">
   <div class="lb-bar">
     <span id="lb-title" class="lb-title"></span>
-    <a id="lb-dl" class="lb-btn" href="#" download="">⬇ Muat turun</a>
-    <button id="lb-close" class="lb-btn" type="button" aria-label="Tutup">✕</button>
+    <a id="lb-dl" class="lb-btn" href="#" download=""><?= htmlspecialchars(T('lb_dl')) ?></a>
+    <button id="lb-close" class="lb-btn" type="button" aria-label="<?= htmlspecialchars(T('lb_close')) ?>">✕</button>
   </div>
   <div id="lb-body" class="lb-body"></div>
 </div>
 
-<div id="zip-warn" class="lb hidden" role="alertdialog" aria-modal="true" aria-label="Amaran saiz folder">
+<div id="zip-warn" class="lb hidden" role="alertdialog" aria-modal="true" aria-label="<?= htmlspecialchars(T('zw_title')) ?>">
   <div class="zw-box">
     <div class="zw-icon">📦</div>
-    <h2>Folder terlalu besar untuk dimuat turun sebagai Zip</h2>
+    <h2><?= htmlspecialchars(T('zw_title')) ?></h2>
     <p id="zw-msg" class="zw-msg"></p>
-    <p class="zw-hint">Sila muat turun fail satu persatu guna butang simpan (⬇) pada setiap item.</p>
-    <button type="button" id="zw-close" class="zw-ok">Baiklah</button>
+    <p class="zw-hint"><?= htmlspecialchars(T('zw_hint')) ?></p>
+    <button type="button" id="zw-close" class="zw-ok"><?= htmlspecialchars(T('zw_ok')) ?></button>
   </div>
 </div>
 
 <script>
+var MWE_I18N = <?= json_encode($I18N, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
 function setView(v) {
   document.getElementById('view-grid').classList.toggle('hidden', v !== 'grid');
   document.getElementById('view-list').classList.toggle('hidden', v !== 'list');
@@ -772,8 +801,18 @@ document.getElementById('btn-theme').addEventListener('click', function() {
   setTheme(document.documentElement.classList.contains('light') ? 'dark' : 'light');
 });
 
+// --- Language (i18n): simpan pilihan dalam cookie, reload guna bahasa baru ---
+(function() {
+  var sel = document.getElementById('lang-sel');
+  if (!sel) return;
+  sel.addEventListener('change', function() {
+    document.cookie = 'mwe_lang=' + encodeURIComponent(sel.value) + ';path=/;max-age=31536000;SameSite=Lax';
+    window.location.reload();
+  });
+})();
+
 // --- Susunan (sort): butang split + dropdown; folder sentiasa dulukan ---
-var SORT_LABELS = { name: 'Nama', size: 'Saiz', ctime: 'Dicipta', mtime: 'Diubah', ext: 'Jenis' };
+var SORT_LABELS = { name: MWE_I18N.s_name, size: MWE_I18N.s_size, ctime: MWE_I18N.s_ctime, mtime: MWE_I18N.s_mtime, ext: MWE_I18N.s_ext };
 var sortState = { key: 'name', dir: 'asc' };
 function sortItems(key, dir) {
   var cards = Array.prototype.slice.call(document.querySelectorAll('#view-grid .card[data-idx]'));
@@ -812,7 +851,7 @@ function sortItems(key, dir) {
 function applySortUI() {
   var arrow = sortState.dir === 'asc' ? ' ▴' : ' ▾';
   var btn = document.getElementById('sort-btn');
-  if (btn) btn.textContent = (SORT_LABELS[sortState.key] || 'Nama') + arrow;
+  if (btn) btn.textContent = (SORT_LABELS[sortState.key] || MWE_I18N.s_name) + arrow;
   Array.prototype.slice.call(document.querySelectorAll('#view-list th[data-sort]')).forEach(function(t) {
     t.classList.remove('sort-asc', 'sort-desc');
     if (t.getAttribute('data-sort') === sortState.key) t.classList.add(sortState.dir === 'asc' ? 'sort-asc' : 'sort-desc');
@@ -886,12 +925,12 @@ function openLb(href, name, kind) {
   else if (kind === 'audio') body.innerHTML = '<audio controls autoplay src="' + href + '"></audio>';
   else if (kind === 'pdf')   body.innerHTML = '<iframe src="' + href + '"></iframe>';
   else if (kind === 'text') {
-    body.innerHTML = '<pre class="lb-pre">Memuat…</pre>';
+    body.innerHTML = '<pre class="lb-pre">' + MWE_I18N.lb_load + '</pre>';
     fetch(href).then(function(r) { return r.text(); }).then(function(t) {
       var max = 1048576; // cap ~1MB
-      body.querySelector('.lb-pre').textContent = t.length > max ? t.slice(0, max) + '\n\n…(dipangkas)' : t;
+      body.querySelector('.lb-pre').textContent = t.length > max ? t.slice(0, max) + '\n\n' + MWE_I18N.lb_trim : t;
     }).catch(function() {
-      body.querySelector('.lb-pre').textContent = 'Gagal memuatkan fail untuk pratonton.';
+      body.querySelector('.lb-pre').textContent = MWE_I18N.lb_fail;
     });
   }
   document.getElementById('lb-title').textContent = name;
@@ -1063,7 +1102,7 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
           var total = (d && typeof d.total === 'number') ? gb(d.total) : '?';
           var max   = (d && typeof d.max === 'number') ? gb(d.max) : '10 GB';
           var cnt   = (d && typeof d.count === 'number') ? d.count.toLocaleString() : '0';
-          open('Jumlah saiz folder ini ialah ' + total + ' (' + cnt + ' fail). Had "Download Semua (Zip)" ialah ' + max + '.');
+          open(MWE_I18N.zw_msg.replace('%1$s', total).replace('%2$s', cnt).replace('%3$s', max));
         }
       })
       .catch(function(){ window.location.href = dl; });  // fallback: terus download

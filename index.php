@@ -498,14 +498,18 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
 .list a{color:inherit;text-decoration:none}
 .list a:hover{color:var(--accent)}
 .list .sz,.list .dt{color:var(--text2);font-size:12px}
-.more-bar{max-width:1200px;margin:auto;padding:0 20px 30px;display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center}
-.more-wrap{position:relative;display:flex}
-.more-btn{background:var(--surface);color:var(--text);border:1px solid var(--border);border-right:0;border-radius:6px 0 0 6px;padding:7px 12px;font-size:13px;cursor:pointer;transition:.15s}
+@keyframes more-glow{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0)}50%{box-shadow:0 0 16px 3px rgba(59,130,246,.55)}}
+.more-card{cursor:pointer;animation:more-glow 2s ease-in-out infinite}
+.more-card .more-dd{position:absolute;right:8px;bottom:8px;display:inline-flex;flex-direction:column;align-items:flex-end}
+.more-card .more-dd .more-caret{font-size:14px}
+.more-row td{padding:0 14px 18px;text-align:center}
+.more-btn{position:relative;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer;transition:.15s;animation:more-glow 2s ease-in-out infinite}
 .more-btn:hover{border-color:var(--accent);color:var(--accent)}
-.more-caret{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:0 6px 6px 0;padding:7px 8px;font-size:11px;line-height:1;cursor:pointer;transition:.15s}
-.more-caret:hover{border-color:var(--accent);color:var(--accent)}
-.more-menu{position:absolute;bottom:calc(100% + 4px);right:0;min-width:128px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);overflow:hidden;z-index:50}
-.more-menu button{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:0;padding:8px 12px;font-size:13px;cursor:pointer}
+.more-caret{font-size:11px;color:var(--text2);cursor:pointer;padding:4px 6px;border-radius:4px;transition:.15s;user-select:none}
+.more-caret:hover{color:var(--accent);background:var(--hover)}
+.more-row-wrap{position:relative;display:inline-flex;gap:4px;align-items:center}
+.more-menu{position:absolute;bottom:calc(100% + 6px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);overflow:hidden;z-index:50}
+.more-menu button{display:block;width:100%;white-space:nowrap;text-align:right;background:transparent;color:var(--text);border:0;padding:8px 12px;font-size:13px;cursor:pointer}
 .more-menu button:hover{background:var(--hover);color:var(--accent)}
 .sort-wrap{position:relative;display:inline-flex}
 .sort-wrap .sort-btn{border-radius:6px 0 0 6px;border-right:0;font-size:13px;white-space:nowrap}
@@ -543,7 +547,7 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
   .grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
   .card{padding:12px 8px}.card .icon{font-size:28px}.card .fname{font-size:11px}
   .list .name{max-width:120px}
-  .header-inner,.toolbar,.grid-wrap,.list-wrap,.more-bar,.footer{padding-left:12px;padding-right:12px}
+  .header-inner,.toolbar,.grid-wrap,.list-wrap,.footer{padding-left:12px;padding-right:12px}
   .search{max-width:none;flex:1 1 100%}
 }
 .hidden{display:none!important}
@@ -633,6 +637,23 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
       <?php if (!$is_dir): ?><span class="dl-btn" data-href="<?= $self ?>?d=<?= rawurlencode($item['path']) ?>&amp;save=1" data-name="<?= htmlspecialchars($item['name']) ?>" title="Simpan fail (Save As)" role="button" tabindex="0">⬇</span><?php endif; ?>
     </a>
     <?php endforeach; ?>
+    <?php if ($total_items > $REVEAL): ?>
+    <span class="card more-card more-ui" id="grid-more" role="button" tabindex="0" aria-label="Muat lebih item">
+      <span class="icon">···</span>
+      <span class="fname more-label">Lagi <?= (int)$REVEAL ?></span>
+      <span class="more-dd">
+        <span class="more-caret" title="Pilih bilangan">▼</span>
+        <div class="more-menu hidden">
+          <button type="button" data-step="15">Lagi 15</button>
+          <button type="button" data-step="20">Lagi 20</button>
+          <button type="button" data-step="30">Lagi 30</button>
+          <button type="button" data-step="40">Lagi 40</button>
+          <button type="button" data-step="50">Lagi 50</button>
+          <button type="button" data-step="all">Semua</button>
+        </div>
+      </span>
+    </span>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -670,28 +691,29 @@ table.list{width:100%;border-collapse:collapse;background:var(--surface);color:v
         <td class="dt"><?= date('d M Y, H:i', (int)$item['mtime']) ?></td>
       </tr>
       <?php endforeach; ?>
+      <?php if ($total_items > $REVEAL): ?>
+      <tr class="more-row more-ui" id="list-more">
+        <td colspan="4">
+          <span class="more-row-wrap">
+            <button type="button" class="more-btn more-label">Lagi <?= (int)$REVEAL ?></button>
+            <span class="more-caret" title="Pilih bilangan">▾</span>
+            <div class="more-menu hidden">
+              <button type="button" data-step="15">Lagi 15</button>
+              <button type="button" data-step="20">Lagi 20</button>
+              <button type="button" data-step="30">Lagi 30</button>
+              <button type="button" data-step="40">Lagi 40</button>
+              <button type="button" data-step="50">Lagi 50</button>
+              <button type="button" data-step="all">Semua</button>
+            </div>
+          </span>
+        </td>
+      </tr>
+      <?php endif; ?>
     </tbody>
   </table>
 </div>
 
 <script>(function(){var n=<?= (int)$REVEAL ?>;function h(s){for(var i=0;i<s.length;i++){if(i>=n)s[i].classList.add('hidden');}}h(document.querySelectorAll('#view-grid .card[data-idx]'));h(document.querySelectorAll('#view-list tbody tr[data-idx]'));})();</script>
-
-<?php if ($total_items > $REVEAL): ?>
-<div class="more-bar" id="more-bar">
-  <div class="more-wrap">
-    <button class="more-btn" id="more-btn" type="button">Lagi <?= (int)$REVEAL ?></button>
-    <button class="more-caret" id="more-caret" type="button" aria-label="Pilih bilangan">▾</button>
-    <div class="more-menu hidden" id="more-menu">
-      <button type="button" data-step="15">Lagi 15</button>
-      <button type="button" data-step="20">Lagi 20</button>
-      <button type="button" data-step="30">Lagi 30</button>
-      <button type="button" data-step="40">Lagi 40</button>
-      <button type="button" data-step="50">Lagi 50</button>
-      <button type="button" data-step="all">Semua</button>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
 
 <button class="top-fab" id="top-fab" type="button" title="Ke atas" aria-label="Ke atas">⇈</button>
 
@@ -780,6 +802,11 @@ function sortItems(key, dir) {
     if (grid && map[k].card) grid.appendChild(map[k].card);
     if (tbody && map[k].row) tbody.appendChild(map[k].row);
   });
+  // Butang "Lagi" kekal di hujung selepas susunan semula.
+  var gm = document.getElementById('grid-more');
+  if (grid && gm) grid.appendChild(gm);
+  var lm = document.getElementById('list-more');
+  if (tbody && lm) tbody.appendChild(lm);
   if (window.MWE_reveal) window.MWE_reveal();
 }
 function applySortUI() {
@@ -926,27 +953,33 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
   });
 })();
 
-// --- Load more (progressive reveal) ---
+// --- Load more (progressive reveal): butang dalam list, hujung item terakhir ---
 (function(){
   var STEP = <?= (int)$REVEAL ?>;
   var step = STEP;
   var total = document.querySelectorAll('#view-grid .card[data-idx]').length;
   var shown = Math.min(step, total);
-  var bar = document.getElementById('more-bar');
-  var btn = document.getElementById('more-btn');
-  var caret = document.getElementById('more-caret');
-  var menu = document.getElementById('more-menu');
+  var mores  = document.querySelectorAll('.more-ui');
+  var labels = document.querySelectorAll('.more-label');
+  var menus  = document.querySelectorAll('.more-menu');
 
   function applyReveal(){
     var gc = document.querySelectorAll('#view-grid .card[data-idx]');
     var lr = document.querySelectorAll('#view-list tbody tr[data-idx]');
     for (var i = 0; i < gc.length; i++) gc[i].classList.toggle('hidden', i >= shown);
     for (var j = 0; j < lr.length; j++) lr[j].classList.toggle('hidden', j >= shown);
-    if (bar) bar.classList.toggle('hidden', shown >= total);
+    mores.forEach(function(m){ m.classList.toggle('hidden', shown >= total); });
+  }
+  function visibleMore(){
+    for (var i = 0; i < mores.length; i++) {
+      var m = mores[i];
+      if (!m.classList.contains('hidden') && m.offsetParent !== null) return m;
+    }
+    return null;
   }
   function loadMore(n){
-    // Simpan kedudukan butang "Lagi" sebelum item baru direveal.
-    var before = (bar && !bar.classList.contains('hidden')) ? bar.getBoundingClientRect().top : null;
+    var active = visibleMore();
+    var before = active ? active.getBoundingClientRect().top : null;
     if (n === 'all') shown = total;
     else shown = Math.min(total, shown + n);
     applyReveal();
@@ -954,26 +987,38 @@ Array.prototype.slice.call(document.querySelectorAll('.dl-btn')).forEach(functio
     // Bila semua dah terbuka, terus turun ke bawah sekali.
     if (shown >= total) {
       window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
-    } else if (before !== null && bar) {
-      window.scrollBy({ top: bar.getBoundingClientRect().top - before, behavior: 'smooth' });
+    } else if (before !== null && active) {
+      window.scrollBy({ top: active.getBoundingClientRect().top - before, behavior: 'smooth' });
     }
   }
-  if (btn) btn.addEventListener('click', function(){ loadMore(step); });
-  if (caret) caret.addEventListener('click', function(e){
-    e.stopPropagation();
-    if (menu) menu.classList.toggle('hidden');
-  });
-  if (menu) Array.prototype.slice.call(menu.querySelectorAll('button[data-step]')).forEach(function(it){
-    it.addEventListener('click', function(e){
+  function bindReveal(el){
+    el.addEventListener('click', function(e){ e.preventDefault(); loadMore(step); });
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadMore(step); }
+    });
+  }
+  Array.prototype.slice.call(document.querySelectorAll('#grid-more, .more-btn')).forEach(bindReveal);
+  Array.prototype.slice.call(document.querySelectorAll('.more-caret')).forEach(function(c){
+    c.addEventListener('click', function(e){
       e.stopPropagation();
-      var raw = it.getAttribute('data-step');
-      step = (raw === 'all') ? 'all' : parseInt(raw, 10);
-      if (btn) btn.textContent = it.textContent;
-      menu.classList.add('hidden');
-      loadMore(step === 'all' ? 'all' : step);
+      var menu = c.parentElement.querySelector('.more-menu');
+      if (menu) menu.classList.toggle('hidden');
     });
   });
-  document.addEventListener('click', function(){ if (menu) menu.classList.add('hidden'); });
+  menus.forEach(function(menu){
+    menu.addEventListener('click', function(e){ e.stopPropagation(); });
+    Array.prototype.slice.call(menu.querySelectorAll('button[data-step]')).forEach(function(it){
+      it.addEventListener('click', function(e){
+        e.stopPropagation();
+        var raw = it.getAttribute('data-step');
+        step = (raw === 'all') ? 'all' : parseInt(raw, 10);
+        labels.forEach(function(l){ l.textContent = it.textContent; });
+        menus.forEach(function(m){ m.classList.add('hidden'); });
+        loadMore(step === 'all' ? 'all' : step);
+      });
+    });
+  });
+  document.addEventListener('click', function(){ menus.forEach(function(m){ m.classList.add('hidden'); }); });
   window.MWE_reveal = applyReveal;
   applyReveal();
 })();
